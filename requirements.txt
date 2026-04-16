@@ -1,0 +1,12 @@
+beautifulsoup4>=4.12.0
+pandas>=2.0.0
+numpy>=1.24.0
+lxml>=4.9.0
+
+# For PDF AcroForm extraction
+pypdf>=4.0.0
+
+# For notebook use
+jupyter>=1.0.0
+ipykernel>=6.0.0
+matplotlib>=3.7.0
