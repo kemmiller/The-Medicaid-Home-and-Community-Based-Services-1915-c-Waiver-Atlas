@@ -295,11 +295,32 @@ class HTMLTopExtractor:
     def title(self) -> str:
         """Program Title (Section 1-B)."""
         try:
-            elem = self.document.find(string=lambda x: x and "Program Title" in str(x))
-            if elem:
-                textarea = elem.find_next("textarea")
-                if textarea:
-                    return textarea.get_text().strip()
+            # HTM native form: <span id="...programTitle" class="inputTextLong">
+            span = self.document.find(
+                "span", id=lambda x: x and x.endswith("programTitle")
+            )
+            if span:
+                val = span.get_text().strip()
+                if val:
+                    return val
+
+            # PDF-converted HTML: <p>Program Title:</p><p class="s2">Title here</p>
+            label = self.document.find(string=lambda x: x and "Program Title" in str(x))
+            if label:
+                parent = label.parent if label.parent else None
+                if parent:
+                    sibling = parent.find_next_sibling()
+                    if sibling:
+                        val = sibling.get_text().strip()
+                        if val:
+                            return val
+                # fallback: next <p> or <span> in document order
+                for tag in ("p", "span", "div", "textarea"):
+                    nxt = label.find_next(tag)
+                    if nxt:
+                        val = nxt.get_text().strip()
+                        if val and "Program Title" not in val:
+                            return val
         except (AttributeError, TypeError):
             pass
         return ""
@@ -313,7 +334,9 @@ class HTMLTopExtractor:
     def replacedwaiver(self) -> str:
         """Replacing Waiver Number (Section 1-A)."""
         try:
-            elem = self.document.find(string=lambda x: x and "Replacing Waiver Number" in str(x))
+            elem = self.document.find(
+                string=lambda x: x and "Replacing Waiver Number" in str(x)
+            )
             if elem:
                 inp = elem.find_next("input")
                 if inp:
@@ -331,7 +354,9 @@ class HTMLTopExtractor:
     def effective_date(self) -> str:
         """Proposed Effective Date (Section 1-E)."""
         try:
-            elem = self.document.find(string=lambda x: x and "Proposed Effective Date" in str(x))
+            elem = self.document.find(
+                string=lambda x: x and "Proposed Effective Date" in str(x)
+            )
             if elem:
                 inp = elem.find_next("input")
                 if inp:
