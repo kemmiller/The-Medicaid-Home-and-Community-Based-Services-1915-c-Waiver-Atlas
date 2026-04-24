@@ -48,10 +48,12 @@ python merge/merge_extractions.py \
 ```
 MedicaidWaiverExtraction/
 ├── extractors/
-│   ├── html_extractor/          HTML/HTM file parsers
-│   ├── text_extractor/          Plain text file parsers
-│   └── pdf_acroform_extractor/  Fillable PDF parsers
-├── merge/                       Post-hoc merge logic
+│   ├── html_extractor/          HTML/HTM file parsers (waiver-level)
+│   ├── text_extractor/          Plain text file parsers (waiver-level)
+│   ├── pdf_acroform_extractor/  Fillable PDF parsers (waiver-level)
+│   └── service_level_extractor/ Service-level parsers (Appendix C, HTML + text)
+├── categorizer/                 Service name (HCBS taxonomy) and limit categorization
+├── merge/                       Post-hoc merge logic (waiver-level + service-level)
 ├── run/                         CLI entry points
 └── docs/                        Architecture and methodology
 ```
