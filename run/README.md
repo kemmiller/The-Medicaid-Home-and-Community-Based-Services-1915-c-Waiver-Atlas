@@ -6,7 +6,8 @@ Command-line entry point and interactive notebook for running the extraction pip
 
 | File | Description |
 |------|-------------|
-| `run_extraction.py` | CLI runner for HTML and text extraction |
+| `run_extraction.py` | Sequential CLI runner (one track at a time) |
+| `run_parallel.py` | Parallel CLI runner (all tracks simultaneously on separate CPU cores) |
 | `run_extraction.ipynb` | Jupyter notebook for interactive extraction and QA |
 
 ## CLI usage
