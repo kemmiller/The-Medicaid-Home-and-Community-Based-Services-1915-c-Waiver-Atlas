@@ -6,8 +6,9 @@ Combines extraction outputs from HTML, text, and PDF AcroForm into a single unif
 
 | File | Description |
 |------|-------------|
-| `merge_extractions.py` | Merge logic with CLI interface |
-| `merge_extractions.ipynb` | Interactive Jupyter notebook for merging and QA |
+| `merge_extractions.py` | Waiver-level merge logic with CLI interface |
+| `merge_extractions.ipynb` | Interactive Jupyter notebook for waiver-level merging and QA |
+| `merge_service_level.py` | Service-level merge: matches on (document_id, service_name), per-column preferred source |
 
 ## Why post-hoc merge?
 
