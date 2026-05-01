@@ -1,0 +1,86 @@
+# =====================================================================
+# Validation CSV columns NOT in the current clean-repo pipeline
+# Source CSV : /Users/vigneshrbabu/Downloads/1915c waiver-level dataset.csv
+# Pipeline   : extractors/{html_extractor,text_extractor}/*_top_extractor.py
+#                                                       *_tertiary_extractor.py
+# CSV cols total      : 114
+# Pipeline cols total : 84
+# =====================================================================
+
+# ---------------------------------------------------------------------
+# (A) RENAMES — already covered by the pipeline, different name
+# ---------------------------------------------------------------------
+phaseinoutschedule
+specialHCBS
+
+# ---------------------------------------------------------------------
+# (B) AGGREGATED — pipeline has 2-4 separate columns; CSV merges them into one
+# ---------------------------------------------------------------------
+costlimit
+spousal_impov_bc
+
+# ---------------------------------------------------------------------
+# (C) METADATA — derivable, not extracted
+# ---------------------------------------------------------------------
+document_id
+state
+waiver_folder
+program_title
+
+# ---------------------------------------------------------------------
+# (D) TRUE GAPS — concept missing entirely from the pipeline
+# ---------------------------------------------------------------------
+
+# Top-priority (PDF-AcroForm scope, our 10-var standalone covers this)
+selfdirection_yes
+
+# Secondary priority — Self-Direction (Appendix E)
+participant_direction_offered
+selfdirection_description
+sd_employerauth
+sd_budgetauth
+sd_bothauth
+sd_livarrngmnt_1
+sd_livarrngmnt_2
+sd_livarrngmnt_3
+sd_election_1
+sd_election_2
+sd_election_3
+sd_service_1
+sd_fms_gov
+sd_fms_pe
+scope_fms_1
+scope_fms_2
+scope_fms_3
+scope_fms_4
+sd_numenrollees_ea1
+sd_numenrollees_ea2
+sd_numenrollees_ea3
+sd_numenrollees_ea4
+sd_numenrollees_ea5
+sd_numenrollees_ba1
+sd_numenrollees_ba2
+sd_numenrollees_ba3
+sd_numenrollees_ba4
+sd_numenrollees_ba5
+sd_coemployer
+sd_commonlaw
+sd_contradiction
+
+# Secondary priority — Evaluation / Reevaluation
+local_eval_a
+local_eval_b
+local_eval_c
+local_eval_d
+loc_eval_instrument
+reeval_sched_3m
+reeval_sched_6m
+reeval_sched_12m
+reeval_sched_other
+
+# Secondary priority — Rate setting / providers
+provider_rate_methods
+min_numservices
+
+# Tertiary priority — Appendix I (PDF-AcroForm scope, in our standalone)
+enhanced_payments_yes
