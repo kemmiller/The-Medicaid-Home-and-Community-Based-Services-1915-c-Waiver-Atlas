@@ -6,9 +6,11 @@ Document parsers for 1915(c) waiver files, organized by document format.
 
 ```
 extractors/
-├── html_extractor/           Native HTML and converted HTML files
-├── text_extractor/           Plain text (.txt) files
-└── pdf_acroform_extractor/   Fillable PDF files
+├── html_extractor/           Native HTML and converted HTML files (waiver-level, top + tertiary)
+├── text_extractor/           Plain text (.txt) files (waiver-level, top + tertiary)
+├── secondary_extractor/      Appendix E and I (secondary priority, HTML with TXT fallback)
+├── pdf_acroform_extractor/   Fillable PDF files (cross-tier)
+└── service_level_extractor/  HTML and text service-level extraction (Appendix C)
 ```
 
 ## Why split by format?
@@ -18,6 +20,7 @@ Each format requires a different parsing strategy:
 - **HTML** has interactive form elements (checkboxes, radio buttons, textareas) with known `id` attributes. The parser reads element state directly from the DOM.
 - **Text** has no form elements. The parser locates section anchors and reads line by line, matching labels and Yes/Off values.
 - **PDF** stores form state in an internal AcroForm structure with a parent-child widget hierarchy that requires a specialized algorithm.
+- **Service-level** extraction is separated because it produces a different output shape (one row per service per document, 33 columns) compared to waiver-level extraction (one row per document).
 
 ## Priority tiers within each format
 
