@@ -175,15 +175,31 @@ class TextTertiaryExtractor:
                     return i
         return None
 
-    def _detect_num_cols_from_headers(self, start: int, end: int) -> int:
-        header_keywords = ["Medicaid", "Other State Operating", "Contracted", "Local Non-State"]
-        count = 0
+    # Each entry: (prefix, [list of possible header fragments]) — checked in order,
+    # first match wins. Broader fragments listed after specific ones to avoid
+    # "Medicaid" matching "Other State Operating Agency / Medicaid" lines.
+    _HEADER_PATTERNS = [
+        ("inse",  ["Local Non-State"]),
+        ("ce",    ["Contracted Entity"]),
+        ("osa",   ["Other State Operating"]),
+        ("ma",    ["Medicaid Agency", "Medicaid"]),
+    ]
+
+    def _detect_col_order_from_headers(self, start: int, end: int) -> List[str]:
+        """Return ordered list of prefixes actually present, preserving document order."""
+        prefix_to_line: Dict[str, int] = {}
         for i in range(start, end):
-            for kw in header_keywords:
-                if self._stripped[i].startswith(kw):
-                    count += 1
-                    break
-        return count
+            line = self._stripped[i]
+            for prefix, fragments in self._HEADER_PATTERNS:
+                if prefix in prefix_to_line:
+                    continue
+                for frag in fragments:
+                    if frag in line:
+                        prefix_to_line[prefix] = i
+                        break
+        # Sort by line number to preserve the order headers appear in the doc
+        ordered = sorted(prefix_to_line.items(), key=lambda x: x[1])
+        return [prefix for prefix, _ in ordered]
 
     def _detect_num_cols_from_data(self, first_func_idx: int) -> int:
         count = 0
@@ -210,10 +226,13 @@ class TextTertiaryExtractor:
         if first_func_idx is None:
             return result
 
-        num_cols = self._detect_num_cols_from_headers(table_start, first_func_idx)
-        if num_cols == 0:
+        # Detect which columns are present and in what order from headers
+        col_order = self._detect_col_order_from_headers(table_start, first_func_idx)
+        if not col_order:
+            # Fallback: no headers found, infer count from data values and assume standard order
             num_cols = self._detect_num_cols_from_data(first_func_idx)
-        if num_cols == 0:
+            col_order = COL_PREFIXES[:num_cols]
+        if not col_order:
             return result
 
         # Collect non-empty data lines from function start until end of section
@@ -238,7 +257,7 @@ class TextTertiaryExtractor:
             if func_idx >= 0:
                 values = []
                 j = i + 1
-                while j < len(data_lines) and len(values) < num_cols:
+                while j < len(data_lines) and len(values) < len(col_order):
                     val = data_lines[j]
                     if val in ("Yes", "Off"):
                         values.append(val)
@@ -250,8 +269,8 @@ class TextTertiaryExtractor:
 
                 func_num = func_idx + 1
                 for v_pos, val in enumerate(values):
-                    if v_pos < len(COL_PREFIXES) and v_pos < num_cols:
-                        prefix = COL_PREFIXES[v_pos]
+                    if v_pos < len(col_order):
+                        prefix = col_order[v_pos]
                         col_name = f"{prefix}_{func_num}"
                         if col_name in result:
                             result[col_name] = 1 if val == "Yes" else 0
