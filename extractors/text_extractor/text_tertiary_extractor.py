@@ -30,7 +30,6 @@ from pathlib import Path
 from typing import Dict, Any, Optional, List
 import pandas as pd
 
-
 # =============================================================================
 # COLUMN DEFINITIONS
 # =============================================================================
@@ -157,7 +156,9 @@ class TextTertiaryExtractor:
         """Clean extracted text by removing page headers and extra whitespace."""
         if not text:
             return ""
-        text = re.sub(r"Application for 1915\(c\) HCBS Waiver:[^P]*Page \d+ of \d+", "", text)
+        text = re.sub(
+            r"Application for 1915\(c\) HCBS Waiver:[^P]*Page \d+ of \d+", "", text
+        )
         text = re.sub(r"\(\d{2}/\d{2}/\d{4}\)", "", text)
         text = re.sub(r"\d{2}/\d{2}/\d{4}", "", text)
         text = re.sub(r"\s+", " ", text)
@@ -170,7 +171,7 @@ class TextTertiaryExtractor:
     def _find_distribution_section(self) -> Optional[int]:
         for i, line in enumerate(self._stripped):
             if "Distribution of Waiver" in line and "Operational" in line:
-                lookback = " ".join(self._stripped[max(0, i - 15):i])
+                lookback = " ".join(self._stripped[max(0, i - 15) : i])
                 if "Appendix A" in lookback:
                     return i
         return None
@@ -179,10 +180,10 @@ class TextTertiaryExtractor:
     # first match wins. Broader fragments listed after specific ones to avoid
     # "Medicaid" matching "Other State Operating Agency / Medicaid" lines.
     _HEADER_PATTERNS = [
-        ("inse",  ["Local Non-State"]),
-        ("ce",    ["Contracted Entity", "Contracted"]),
-        ("osa",   ["Other State Operating"]),
-        ("ma",    ["Medicaid Agency", "Medicaid"]),
+        ("inse", ["Local Non-State"]),
+        ("ce", ["Contracted Entity", "Contracted"]),
+        ("osa", ["Other State Operating"]),
+        ("ma", ["Medicaid Agency", "Medicaid"]),
     ]
 
     def _detect_col_order_from_headers(self, start: int, end: int) -> List[str]:
@@ -203,7 +204,9 @@ class TextTertiaryExtractor:
 
     def _detect_num_cols_from_data(self, first_func_idx: int) -> int:
         count = 0
-        for i in range(first_func_idx + 1, min(first_func_idx + 20, len(self._stripped))):
+        for i in range(
+            first_func_idx + 1, min(first_func_idx + 20, len(self._stripped))
+        ):
             val = self._stripped[i]
             if val in ("Yes", "Off"):
                 count += 1
@@ -228,10 +231,21 @@ class TextTertiaryExtractor:
 
         # Detect which columns are present and in what order from headers
         col_order = self._detect_col_order_from_headers(table_start, first_func_idx)
+        num_data_cols = self._detect_num_cols_from_data(first_func_idx)
+
         if not col_order:
-            # Fallback: no headers found, infer count from data values and assume standard order
-            num_cols = self._detect_num_cols_from_data(first_func_idx)
-            col_order = COL_PREFIXES[:num_cols]
+            # No named headers at all — assume standard order up to data col count
+            col_order = COL_PREFIXES[:num_data_cols]
+        elif num_data_cols > len(col_order):
+            # Fewer named headers than data columns — blank header slots exist.
+            # Fill missing positions using standard COL_PREFIXES order, inserting
+            # unnamed columns before the first named one found.
+            named_set = set(col_order)
+            unnamed = [p for p in COL_PREFIXES if p not in named_set]
+            num_missing = num_data_cols - len(col_order)
+            # Prepend the missing columns in standard order
+            col_order = unnamed[:num_missing] + col_order
+
         if not col_order:
             return result
 
@@ -241,9 +255,10 @@ class TextTertiaryExtractor:
             line = self._stripped[i]
             if line:
                 data_lines.append(line)
-            if (len(data_lines) > 5
-                    and ("Appendix A: Waiver Administration and Operation" in line
-                         or "Quality Improvement:" in line)):
+            if len(data_lines) > 5 and (
+                "Appendix A: Waiver Administration and Operation" in line
+                or "Quality Improvement:" in line
+            ):
                 data_lines.pop()
                 break
 
@@ -320,7 +335,9 @@ class TextTertiaryExtractor:
                 # Check if description starts on the same line (after a known prompt tail)
                 for tail in self._PROMPT_TAIL_ENDINGS:
                     if tail in marker_line:
-                        after = marker_line[marker_line.index(tail) + len(tail):].strip()
+                        after = marker_line[
+                            marker_line.index(tail) + len(tail) :
+                        ].strip()
                         if after:
                             inline_prefix = after
                         break
@@ -426,7 +443,9 @@ def process_directory(
     results, errors = [], []
     for i, fp in enumerate(txt_files):
         if verbose and (i + 1) % 100 == 0:
-            print(f"  [{i+1}/{len(txt_files)}] Success: {len(results)}, Failed: {len(errors)}")
+            print(
+                f"  [{i+1}/{len(txt_files)}] Success: {len(results)}, Failed: {len(errors)}"
+            )
         try:
             results.append(process_single_file(str(fp)))
         except Exception as e:
@@ -438,7 +457,10 @@ def process_directory(
         print(f"Done: {len(results)} success, {len(errors)} failed")
 
     if output_csv:
-        os.makedirs(os.path.dirname(output_csv) if os.path.dirname(output_csv) else ".", exist_ok=True)
+        os.makedirs(
+            os.path.dirname(output_csv) if os.path.dirname(output_csv) else ".",
+            exist_ok=True,
+        )
         df.to_csv(output_csv, index=False, quoting=csv.QUOTE_ALL)
         if verbose:
             print(f"Saved to: {output_csv}")
@@ -462,7 +484,11 @@ if __name__ == "__main__":
             result = process_single_file(path)
             for k, v in result.items():
                 if v != "" and v is not None:
-                    display_v = v if not isinstance(v, str) else (v[:80] + "..." if len(v) > 80 else v)
+                    display_v = (
+                        v
+                        if not isinstance(v, str)
+                        else (v[:80] + "..." if len(v) > 80 else v)
+                    )
                     print(f"  {k}: {display_v}")
         else:
             df = process_directory(path, output_csv)
