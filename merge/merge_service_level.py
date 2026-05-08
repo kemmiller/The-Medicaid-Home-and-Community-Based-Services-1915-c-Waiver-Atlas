@@ -130,25 +130,43 @@ def merge_row(h_row, t_row, col_source: dict, cols: list) -> dict:
     return merged
 
 
-def filter_valid_document_ids(df, id_col="document_id"):
-    """
-    Keep only document IDs that match real waiver ID format.
-    Valid: length 4-16, starts with 2 uppercase letters, has >= 4 digits.
-    """
-    def is_valid(doc_id):
-        if pd.isna(doc_id):
-            return False
-        s = str(doc_id).strip()
-        if not (2 <= len(s) <= 16):
-            return False
-        if not re.match(r"^[A-Z]{2}", s):
-            return False
-        if len(re.findall(r"\d", s)) < 4:
-            return False
-        return True
+# Valid waiver ID pattern: 2-letter state + 4-or-5-digit number + optional R+version
+# Examples: CO0006R0600, GA0112R0701, AL40382R0200, NC0423, WA0008
+_VALID_WAIVER_ID_RE = re.compile(r"^[A-Z]{2}\d{4,5}(R\d+)?$", re.IGNORECASE)
 
-    mask = df[id_col].apply(is_valid)
-    return df[mask].reset_index(drop=True), df[~mask].reset_index(drop=True)
+# Keyword fragments that indicate a non-waiver document
+_JUNK_ID_KEYWORDS = [
+    "SUBMISSION", "SUBMITTAL", "APPROVALLETT", "EMAIL",
+    "AMENDMENT", "OKCAID", "JANUARY", "FEBRUARY", "MARCH", "APRIL",
+    "MAY", "JUNE", "JULY", "AUGUST", "SEPTEMBER", "OCTOBER",
+    "NOVEMBER", "DECEMBER", "PAGESFROM", "HTML", "WAIVERMERG",
+    "CBAWAVIER", "FY20",
+]
+
+
+def is_valid_waiver_id(doc_id: str) -> bool:
+    """Return True if the normalized doc ID looks like a real waiver document."""
+    if not doc_id or pd.isna(doc_id):
+        return False
+    s = str(doc_id).upper()
+    if not _VALID_WAIVER_ID_RE.match(s):
+        return False
+    for kw in _JUNK_ID_KEYWORDS:
+        if kw in s:
+            return False
+    return True
+
+
+def filter_valid_document_ids(df, id_col="document_id", verbose=True):
+    """Filter out rows whose document ID does not match the standard waiver ID format."""
+    norm_ids = df[id_col].apply(normalize_doc_id)
+    mask = norm_ids.apply(is_valid_waiver_id)
+    removed = df[~mask]
+    if verbose and len(removed):
+        print(f"Removing {len(removed)} invalid doc IDs:")
+        for bad_id in norm_ids[~mask].tolist():
+            print(f"  {bad_id}")
+    return df[mask].reset_index(drop=True), removed.reset_index(drop=True)
 
 
 # =============================================================================
@@ -288,12 +306,13 @@ def main():
     print(f"HTML: {df_htm.shape}")
     print(f"Text: {df_txt.shape}\n")
 
-    df_merged = merge_service_level(df_htm, df_txt)
-
     if args.clean:
-        print("\nFiltering invalid document IDs...")
-        df_merged, removed = filter_valid_document_ids(df_merged)
-        print(f"  Kept: {len(df_merged)}, Removed: {len(removed)}")
+        print("Filtering invalid document IDs...")
+        df_htm, _ = filter_valid_document_ids(df_htm)
+        df_txt, _ = filter_valid_document_ids(df_txt)
+        print(f"After filtering — HTML: {df_htm.shape}, Text: {df_txt.shape}\n")
+
+    df_merged = merge_service_level(df_htm, df_txt)
 
     if args.drop_merge_source and "_merge_source" in df_merged.columns:
         df_merged = df_merged.drop(columns=["_merge_source"])
