@@ -41,6 +41,53 @@ def normalize_doc_id(doc_id) -> str:
     return s.upper()
 
 
+# Valid waiver ID pattern: 2-letter state + 4-or-5-digit number + optional R+version
+# Examples: CO0006R0600, GA0112R0701, AL40382R0200, NC0423, WA0008
+_VALID_WAIVER_ID_RE = re.compile(r"^[A-Z]{2}\d{4,5}(R\d+)?$", re.IGNORECASE)
+
+# Keyword fragments that indicate a non-waiver document
+_JUNK_ID_KEYWORDS = [
+    "SUBMISSION",
+    "SUBMITTAL",
+    "APPROVALLETT",
+    "EMAIL",
+    "AMENDMENT",
+    "OKCAID",
+    "JANUARY",
+    "FEBRUARY",
+    "MARCH",
+    "APRIL",
+    "MAY",
+    "JUNE",
+    "JULY",
+    "AUGUST",
+    "SEPTEMBER",
+    "OCTOBER",
+    "NOVEMBER",
+    "DECEMBER",
+    "PAGESFROM",
+    "HTML",
+    "WAIVERMERG",
+    "CBAWAVIER",
+    "FY20",
+]
+
+
+def is_valid_waiver_id(doc_id: str) -> bool:
+    """Return True if the normalized doc ID looks like a real waiver document."""
+    if not doc_id or pd.isna(doc_id):
+        return False
+    s = str(doc_id).upper()
+    # Must match the standard state+number+revision pattern
+    if not _VALID_WAIVER_ID_RE.match(s):
+        return False
+    # Must not contain known junk keyword fragments
+    for kw in _JUNK_ID_KEYWORDS:
+        if kw in s:
+            return False
+    return True
+
+
 def is_empty(value) -> bool:
     """Check if a value is considered empty (NaN, None, empty string, 'None' string)."""
     if pd.isna(value):
@@ -165,8 +212,12 @@ def main():
     parser = argparse.ArgumentParser(description="Merge extraction CSVs")
     parser.add_argument("--html_csv", required=True, help="Path to HTML extraction CSV")
     parser.add_argument("--text_csv", required=True, help="Path to Text extraction CSV")
-    parser.add_argument("--output_csv", required=True, help="Path for merged output CSV")
-    parser.add_argument("--pdf_csv", default=None, help="Optional PDF AcroForm extraction CSV")
+    parser.add_argument(
+        "--output_csv", required=True, help="Path for merged output CSV"
+    )
+    parser.add_argument(
+        "--pdf_csv", default=None, help="Optional PDF AcroForm extraction CSV"
+    )
     parser.add_argument(
         "--pdf_authoritative_fields",
         nargs="*",
@@ -185,6 +236,23 @@ def main():
     print(f"HTML: {df_html.shape}")
     print(f"Text: {df_text.shape}\n")
 
+    # Filter out non-waiver document IDs before merging
+    for label, df in [("HTML", df_html), ("Text", df_text)]:
+        norm_ids = df["document_id"].apply(normalize_doc_id)
+        mask = norm_ids.apply(is_valid_waiver_id)
+        removed = (~mask).sum()
+        if removed:
+            print(f"[{label}] Removing {removed} invalid doc IDs:")
+            for bad_id in norm_ids[~mask].tolist():
+                print(f"  {bad_id}")
+    df_html = df_html[
+        df_html["document_id"].apply(normalize_doc_id).apply(is_valid_waiver_id)
+    ].reset_index(drop=True)
+    df_text = df_text[
+        df_text["document_id"].apply(normalize_doc_id).apply(is_valid_waiver_id)
+    ].reset_index(drop=True)
+    print(f"\nAfter filtering — HTML: {df_html.shape}, Text: {df_text.shape}\n")
+
     # First merge: HTML + Text
     merged = merge_two_sources(df_html, df_text, "html", "text")
 
@@ -193,13 +261,18 @@ def main():
         df_pdf = pd.read_csv(args.pdf_csv)
         print(f"\nPDF: {df_pdf.shape}")
         merged = merge_two_sources(
-            merged, df_pdf,
-            "html+text", "pdf_acroform",
+            merged,
+            df_pdf,
+            "html+text",
+            "pdf_acroform",
             authoritative_fields=args.pdf_authoritative_fields,
             authoritative_source="b",
         )
 
-    os.makedirs(os.path.dirname(args.output_csv) if os.path.dirname(args.output_csv) else ".", exist_ok=True)
+    os.makedirs(
+        os.path.dirname(args.output_csv) if os.path.dirname(args.output_csv) else ".",
+        exist_ok=True,
+    )
     merged.to_csv(args.output_csv, index=False)
     print(f"\nSaved to: {args.output_csv}")
 

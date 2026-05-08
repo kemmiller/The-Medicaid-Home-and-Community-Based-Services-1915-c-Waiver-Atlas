@@ -159,6 +159,9 @@ class TextTertiaryExtractor:
         text = re.sub(
             r"Application for 1915\(c\) HCBS Waiver:[^P]*Page \d+ of \d+", "", text
         )
+        # Remove URLs and any date immediately following (page-break artifact)
+        text = re.sub(r"https?://\S+\s*\d{1,2}/\d{1,2}/\d{4}", "", text)
+        text = re.sub(r"https?://\S+", "", text)
         text = re.sub(r"\(\d{2}/\d{2}/\d{4}\)", "", text)
         text = re.sub(r"\d{2}/\d{2}/\d{4}", "", text)
         text = re.sub(r"\s+", " ", text)

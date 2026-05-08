@@ -24,7 +24,6 @@ from typing import Dict, Any, Optional
 from bs4 import BeautifulSoup
 import pandas as pd
 
-
 # =============================================================================
 # COLUMN DEFINITIONS
 # =============================================================================
@@ -92,9 +91,9 @@ FUNCTION_LABELS = [
 # Ordered header patterns for PDF-converted layout (most specific first)
 _PDF_HEADER_PATTERNS = [
     ("inse", ["Local Non-State"]),
-    ("ce",   ["Contracted Entity", "Contracted"]),
-    ("osa",  ["Other State Operating"]),
-    ("ma",   ["Medicaid Agency", "Medicaid"]),
+    ("ce", ["Contracted Entity", "Contracted"]),
+    ("osa", ["Other State Operating"]),
+    ("ma", ["Medicaid Agency", "Medicaid"]),
 ]
 
 # Transition plan HTML element IDs
@@ -113,9 +112,10 @@ class HTMLTertiaryExtractor:
     Extracts tertiary-priority fields from an HTML waiver document.
     """
 
-    def __init__(self, document_id: str, html_content: str):
+    def __init__(self, document_id: str, html_content: str, is_htm: bool = False):
         self.document_id = document_id
         self.soup = BeautifulSoup(html_content, "html.parser")
+        self._is_htm = is_htm  # .htm files have reliable glyph-based checkbox encoding
 
     # -------------------------------------------------------------------------
     # Helpers
@@ -134,21 +134,45 @@ class HTMLTertiaryExtractor:
             return 1
         return 0
 
-    @staticmethod
-    def _is_checked_cell(cell) -> int:
+    def _is_checked_cell(self, cell):
         """
-        Detect checked state in a PDF-converted HTM table cell.
-        Checked:   cell text contains \\ue008 (private-use checkmark glyph)
-        Unchecked: cell contains only <br/> and empty <span> elements
-        Native:    falls back to <input type=checkbox> checked attribute
+        Detect checked state in an HTML/HTM table cell.
+
+        Returns:
+          1   -- checked (input[checked] or unicode checkmark glyph present)
+          0   -- explicitly unchecked (input not checked, or <br/>/<span/> in .htm)
+          ""  -- no reliable checkbox signal (.html files without <input>, or truly absent)
         """
+        # Native form: <input type="checkbox"> — reliable in all formats
         inp = cell.find("input", {"type": "checkbox"})
         if inp:
             return 1 if inp.has_attr("checked") else 0
+
+        # Native form: <input> with Yes/Off value
+        inp_any = cell.find("input")
+        if inp_any:
+            val = inp_any.get("value", "").strip().lower()
+            if val in ("yes", "on", "true", "1"):
+                return 1
+            if val in ("off", "no", "false", "0"):
+                return 0
+
+        # .html files: PDF conversion artifacts — checkbox state not reliable
+        # Only trust <input> checkboxes (handled above); everything else is missing
+        if not self._is_htm:
+            return ""
+
+        # .htm files: unicode private-use checkmark glyph = checked
         cell_text = cell.get_text()
         if "" in cell_text:
             return 1
-        return 0
+
+        # .htm files: <br/> or <span/> present = cell is part of table, explicitly unchecked
+        if cell.find("br") or cell.find("span"):
+            return 0
+
+        # No tags, no text — truly absent
+        return ""
 
     def _get_checkbox_by_id(self, element_id: str):
         element = self.soup.find("input", {"id": element_id})
@@ -168,7 +192,8 @@ class HTMLTertiaryExtractor:
 
     def _find_distribution_table(self):
         appendix_a_elements = self.soup.find_all(
-            string=lambda x: x and "Appendix A: Waiver Administration and Operation" in str(x)
+            string=lambda x: x
+            and "Appendix A: Waiver Administration and Operation" in str(x)
         )
         for elem in appendix_a_elements:
             parent = elem.parent if elem.parent else elem
@@ -203,9 +228,19 @@ class HTMLTertiaryExtractor:
         # Check first <tr> cells (PDF-converted HTM: headers in <td><p> not <th>)
         first_row = table.find("tr")
         if first_row:
-            cell_texts = [td.get_text(" ", strip=True) for td in first_row.find_all("td")]
+            cell_texts = [
+                td.get_text(" ", strip=True) for td in first_row.find_all("td")
+            ]
             full_text = " ".join(cell_texts)
-            if any(k in full_text for k in ["Medicaid", "Contracted", "Local Non-State", "Other State Operating"]):
+            if any(
+                k in full_text
+                for k in [
+                    "Medicaid",
+                    "Contracted",
+                    "Local Non-State",
+                    "Other State Operating",
+                ]
+            ):
                 return True
         return False
 
@@ -278,7 +313,9 @@ class HTMLTertiaryExtractor:
 
         # Find the "Distribution of Waiver" section anchor
         dist_elem = self.soup.find(
-            string=lambda x: x and "Distribution of Waiver" in str(x) and "Operational" in str(x)
+            string=lambda x: x
+            and "Distribution of Waiver" in str(x)
+            and "Operational" in str(x)
         )
         if dist_elem is None:
             return result
@@ -290,7 +327,8 @@ class HTMLTertiaryExtractor:
             all_tags.append((tag, text))
             # Stop at next major section
             if len(all_tags) > 5 and any(
-                kw in text for kw in [
+                kw in text
+                for kw in [
                     "Brief Waiver Description",
                     "Components of the Waiver",
                     "Appendix B",
@@ -384,7 +422,9 @@ class HTMLTertiaryExtractor:
                     # Check if this span comes before the bold in the tag's children
                     siblings = list(tag.children)
                     span_pos = next((k for k, c in enumerate(siblings) if c == s), -1)
-                    bold_pos = next((k for k, c in enumerate(siblings) if c == bold), -1)
+                    bold_pos = next(
+                        (k for k, c in enumerate(siblings) if c == bold), -1
+                    )
                     if span_pos < bold_pos:
                         return 1  # checked
             return 0  # unchecked
@@ -470,11 +510,13 @@ class HTMLTertiaryExtractor:
 
 
 def process_single_file(file_path: str) -> Dict[str, Any]:
-    """Process a single HTML file and extract tertiary fields."""
-    doc_id = Path(file_path).stem
+    """Process a single HTML/HTM file and extract tertiary fields."""
+    fp = Path(file_path)
+    doc_id = fp.stem
+    is_htm = fp.suffix.lower() == ".htm"
     with open(file_path, "r", encoding="utf-8", errors="replace") as f:
         html = f.read()
-    return HTMLTertiaryExtractor(doc_id, html).extract_all()
+    return HTMLTertiaryExtractor(doc_id, html, is_htm=is_htm).extract_all()
 
 
 def process_directory(
@@ -491,7 +533,9 @@ def process_directory(
     results, errors = [], []
     for i, fp in enumerate(htm_files):
         if verbose and (i + 1) % 100 == 0:
-            print(f"  [{i+1}/{len(htm_files)}] Success: {len(results)}, Failed: {len(errors)}")
+            print(
+                f"  [{i+1}/{len(htm_files)}] Success: {len(results)}, Failed: {len(errors)}"
+            )
         try:
             results.append(process_single_file(str(fp)))
         except Exception as e:
@@ -503,7 +547,10 @@ def process_directory(
         print(f"Done: {len(results)} success, {len(errors)} failed")
 
     if output_csv:
-        os.makedirs(os.path.dirname(output_csv) if os.path.dirname(output_csv) else ".", exist_ok=True)
+        os.makedirs(
+            os.path.dirname(output_csv) if os.path.dirname(output_csv) else ".",
+            exist_ok=True,
+        )
         df.to_csv(output_csv, index=False, quoting=csv.QUOTE_ALL)
         if verbose:
             print(f"Saved to: {output_csv}")
@@ -527,7 +574,11 @@ if __name__ == "__main__":
             result = process_single_file(path)
             for k, v in result.items():
                 if v != "" and v is not None:
-                    display_v = v if not isinstance(v, str) else (v[:80] + "..." if len(v) > 80 else v)
+                    display_v = (
+                        v
+                        if not isinstance(v, str)
+                        else (v[:80] + "..." if len(v) > 80 else v)
+                    )
                     print(f"  {k}: {display_v}")
         else:
             df = process_directory(path, output_csv)
