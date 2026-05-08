@@ -73,6 +73,30 @@ HEADER_FALLBACKS = {
     "Local Non-State": "inse",
 }
 
+# Function labels for PDF-converted HTML (paragraph-based layout)
+FUNCTION_LABELS = [
+    "Participant waiver enrollment",
+    "Waiver enrollment managed against approved limits",
+    "Waiver expenditures managed against approved levels",
+    "Level of care evaluation",
+    "Review of Participant service plans",
+    "Prior authorization of waiver services",
+    "Utilization management",
+    "Qualified provider enrollment",
+    "Execution of Medicaid provider agreements",
+    "Establishment of a statewide rate methodology",
+    "Rules, policies, procedures and information development",
+    "Quality assurance and quality improvement activities",
+]
+
+# Ordered header patterns for PDF-converted layout (most specific first)
+_PDF_HEADER_PATTERNS = [
+    ("inse", ["Local Non-State"]),
+    ("ce",   ["Contracted Entity", "Contracted"]),
+    ("osa",  ["Other State Operating"]),
+    ("ma",   ["Medicaid Agency", "Medicaid"]),
+]
+
 # Transition plan HTML element IDs
 TRANSITION_PLAN_IDS = {
     f"transition_plan_{i}": f"svattachment1:tranPlanChgType{i}" for i in range(1, 11)
@@ -107,6 +131,22 @@ class HTMLTertiaryExtractor:
         if value in ("on", "yes", "true", "1"):
             return 1
         if element.get("checked") is not None:
+            return 1
+        return 0
+
+    @staticmethod
+    def _is_checked_cell(cell) -> int:
+        """
+        Detect checked state in a PDF-converted HTM table cell.
+        Checked:   cell text contains \\ue008 (private-use checkmark glyph)
+        Unchecked: cell contains only <br/> and empty <span> elements
+        Native:    falls back to <input type=checkbox> checked attribute
+        """
+        inp = cell.find("input", {"type": "checkbox"})
+        if inp:
+            return 1 if inp.has_attr("checked") else 0
+        cell_text = cell.get_text()
+        if "" in cell_text:
             return 1
         return 0
 
@@ -146,6 +186,7 @@ class HTMLTertiaryExtractor:
         return None
 
     def _is_distribution_table(self, table) -> bool:
+        # Check <th> headers (native HTM form)
         headers = table.findChildren("th")
         header_texts = [h.get_text().strip() for h in headers]
         for text in header_texts:
@@ -159,57 +200,243 @@ class HTMLTertiaryExtractor:
             inputs = table.findChildren("input")
             if len(inputs) >= 12:
                 return True
+        # Check first <tr> cells (PDF-converted HTM: headers in <td><p> not <th>)
+        first_row = table.find("tr")
+        if first_row:
+            cell_texts = [td.get_text(" ", strip=True) for td in first_row.find_all("td")]
+            full_text = " ".join(cell_texts)
+            if any(k in full_text for k in ["Medicaid", "Contracted", "Local Non-State", "Other State Operating"]):
+                return True
         return False
 
     def _detect_columns(self, table) -> dict:
         included = {}
-        for j, header in enumerate(table.findChildren("th")):
-            text = header.get_text().strip()
-            if text in HEADER_TO_PREFIX:
-                included[j] = HEADER_TO_PREFIX[text]
-                continue
-            for key, prefix in HEADER_FALLBACKS.items():
-                if text.startswith(key):
-                    included[j] = prefix
-                    break
+        # Try <th> first (native HTM)
+        headers = table.findChildren("th")
+        if headers:
+            for j, header in enumerate(headers):
+                text = header.get_text(" ", strip=True)
+                matched = self._match_header_text(text)
+                if matched:
+                    included[j] = matched
+            return included
+        # Fallback: read column order from first <tr> <td> cells (PDF-converted HTM)
+        first_row = table.find("tr")
+        if first_row:
+            for j, td in enumerate(first_row.find_all("td")):
+                text = td.get_text(" ", strip=True)
+                matched = self._match_header_text(text)
+                if matched:
+                    included[j] = matched
         return included
+
+    @staticmethod
+    def _match_header_text(text: str) -> str:
+        for key, prefix in HEADER_TO_PREFIX.items():
+            if key in text:
+                return prefix
+        for key, prefix in HEADER_FALLBACKS.items():
+            if key in text:
+                return prefix
+        return ""
 
     def _extract_appendix_a(self) -> dict:
         result = {c: "" for c in APPENDIX_A_COLUMNS}
         try:
             table = self._find_distribution_table()
-            if table is None:
-                return result
+            if table is not None:
+                # Native HTM form: table with <th> headers and <input> checkboxes
+                included_columns = self._detect_columns(table)
+                if included_columns:
+                    rows = table.findChildren("tr")
+                    for i, row in enumerate(rows[1:]):
+                        func_num = i + 1
+                        if func_num > 12:
+                            break
+                        cells = row.findChildren("td")
+                        for j, cell in enumerate(cells):
+                            if j in included_columns:
+                                prefix = included_columns[j]
+                                col_name = f"{prefix}_{func_num}"
+                                if col_name in result:
+                                    result[col_name] = self._is_checked_cell(cell)
+                    return result
 
-            included_columns = self._detect_columns(table)
-            if not included_columns:
-                return result
-
-            rows = table.findChildren("tr")
-            for i, row in enumerate(rows[1:]):
-                func_num = i + 1
-                if func_num > 12:
-                    break
-                cells = row.findChildren("td")
-                for j, cell in enumerate(cells):
-                    if j in included_columns:
-                        prefix = included_columns[j]
-                        col_name = f"{prefix}_{func_num}"
-                        if col_name in result:
-                            checkbox = cell.findChild("input")
-                            if checkbox:
-                                result[col_name] = self._is_checked(checkbox)
+            # Fallback: PDF-converted HTML with paragraph-based layout
+            result = self._extract_appendix_a_pdf_layout()
         except Exception:
             pass
         return result
+
+    def _extract_appendix_a_pdf_layout(self) -> dict:
+        """
+        Handles PDF-converted HTML where Appendix A is rendered as paragraphs.
+        Checkboxes appear as <span/> (checked) or empty <span> (unchecked) before
+        bold text labels. Column headers are plain text paragraphs.
+        """
+        result = {c: "" for c in APPENDIX_A_COLUMNS}
+
+        # Find the "Distribution of Waiver" section anchor
+        dist_elem = self.soup.find(
+            string=lambda x: x and "Distribution of Waiver" in str(x) and "Operational" in str(x)
+        )
+        if dist_elem is None:
+            return result
+
+        # Collect all block-level elements after the anchor
+        all_tags = []
+        for tag in dist_elem.find_all_next(["p", "h1", "h2", "h3", "li", "td"]):
+            text = tag.get_text(" ", strip=True)
+            all_tags.append((tag, text))
+            # Stop at next major section
+            if len(all_tags) > 5 and any(
+                kw in text for kw in [
+                    "Brief Waiver Description",
+                    "Components of the Waiver",
+                    "Appendix B",
+                    "8. Authorizing",
+                ]
+            ):
+                break
+
+        # Detect which column headers are present and in what order
+        col_order = []
+        for tag, text in all_tags:
+            for prefix, fragments in _PDF_HEADER_PATTERNS:
+                if prefix in col_order:
+                    continue
+                for frag in fragments:
+                    if frag in text and len(text) < 60:
+                        col_order.append(prefix)
+                        break
+            if len(col_order) == 4:
+                break
+
+        if not col_order:
+            return result
+
+        # Match function rows and read checkbox state per column
+        # In PDF-converted HTML a checked box is a <span/> (self-closing) immediately
+        # before bold label text; unchecked is absent or an empty <span>.
+        func_count = 0
+        i = 0
+        while i < len(all_tags) and func_count < 12:
+            tag, text = all_tags[i]
+            func_idx = self._match_function_label(text)
+            if func_idx >= 0:
+                func_num = func_idx + 1
+                # Gather the next len(col_order) checkbox signals from subsequent tags
+                values = []
+                j = i + 1
+                while j < len(all_tags) and len(values) < len(col_order):
+                    next_tag, next_text = all_tags[j]
+                    cb_val = self._read_pdf_checkbox(next_tag, next_text)
+                    if cb_val is not None:
+                        values.append(cb_val)
+                    elif self._match_function_label(next_text) >= 0:
+                        break
+                    j += 1
+
+                for v_pos, val in enumerate(values):
+                    if v_pos < len(col_order):
+                        col_name = f"{col_order[v_pos]}_{func_num}"
+                        if col_name in result:
+                            result[col_name] = val
+
+                func_count += 1
+                i = j
+            else:
+                i += 1
+
+        return result
+
+    @staticmethod
+    def _match_function_label(text: str) -> int:
+        lower = text.lower().strip()
+        for idx, label in enumerate(FUNCTION_LABELS):
+            if label.lower()[:35] in lower:
+                return idx
+        return -1
+
+    @staticmethod
+    def _read_pdf_checkbox(tag, text: str):
+        """
+        In PDF-converted HTML a checked box row contains a <span/> self-closing tag
+        followed by bold text. Returns 1 (checked), 0 (unchecked), or None (not a checkbox row).
+        """
+        # Look for <input> checkbox first (some converters keep them)
+        inp = tag.find("input", {"type": "checkbox"})
+        if inp:
+            return 1 if inp.has_attr("checked") else 0
+
+        # PDF-converted: a self-closing <span/> or <span class="..."/> signals checked
+        spans = tag.find_all("span")
+        has_empty_span = any(s.get_text(strip=True) == "" for s in spans)
+        bold = tag.find("b")
+
+        # Only treat as a checkbox row if it has bold text (the label) and is short
+        if bold and has_empty_span and len(text) < 80:
+            # A checked row has the span immediately before bold; unchecked rows
+            # typically just have the label text without a leading empty span.
+            # We detect checked by presence of self-closing span sibling before bold.
+            for s in spans:
+                if s.get_text(strip=True) == "":
+                    # Check if this span comes before the bold in the tag's children
+                    siblings = list(tag.children)
+                    span_pos = next((k for k, c in enumerate(siblings) if c == s), -1)
+                    bold_pos = next((k for k, c in enumerate(siblings) if c == bold), -1)
+                    if span_pos < bold_pos:
+                        return 1  # checked
+            return 0  # unchecked
+
+        return None  # not a checkbox row
 
     # -------------------------------------------------------------------------
     # Waiver Description + Transition Plans
     # -------------------------------------------------------------------------
 
+    _DESC_START_MARKERS = [
+        "In one page or less",
+        "briefly describe the purpose",
+        "Brief Waiver Description.",
+    ]
+    _DESC_STOP_MARKERS = [
+        "Components of the Waiver",
+        "Waiver Administration and Operation. Appendix A",
+        "The waiver application consists of",
+    ]
+
     def _extract_waiver_description(self) -> str:
+        # Native HTM form: textarea with known ID
         text = self._get_textarea_by_id("svBriefDescription:programDesc")
-        return text.replace("\n", " ").replace("\r", " ").strip()
+        if text:
+            return text.replace("\n", " ").replace("\r", " ").strip()
+
+        # Fallback for PDF-converted HTML: collect <p> text between section markers
+        start_elem = None
+        for marker in self._DESC_START_MARKERS:
+            start_elem = self.soup.find(string=lambda x, m=marker: x and m in str(x))
+            if start_elem:
+                break
+        if start_elem is None:
+            return ""
+
+        paragraphs = []
+        for tag in start_elem.find_all_next(["p", "h1", "h2", "h3"]):
+            text = tag.get_text(" ", strip=True)
+            if not text:
+                continue
+            # Stop at section 3 boundary
+            if any(m in text for m in self._DESC_STOP_MARKERS):
+                break
+            if tag.name in ("h1", "h2", "h3"):
+                break
+            # Skip lines that are still part of the prompt header
+            if any(m in text for m in self._DESC_START_MARKERS):
+                continue
+            paragraphs.append(text)
+
+        return " ".join(paragraphs).strip()
 
     def _extract_transition_plan(self, plan_key: str):
         element_id = TRANSITION_PLAN_IDS[plan_key]

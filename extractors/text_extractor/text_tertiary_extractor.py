@@ -286,47 +286,84 @@ class TextTertiaryExtractor:
     # Waiver Description
     # -------------------------------------------------------------------------
 
-    def _extract_waiver_description(self) -> str:
-        """Extract Brief Waiver Description."""
-        # Try the "In one page or less" marker first
-        try:
-            i = self._get_index("In one page or less", document=self._document)
-            text_lines = []
-            for line in self._document[i + 1:]:
-                stripped = line.strip()
-                if not stripped:
-                    if text_lines:
-                        continue
-                    continue
-                if stripped.startswith("3.") or "Components of the Waiver" in stripped:
-                    break
-                if stripped.startswith("sv") and ":" in stripped:
-                    continue
-                text_lines.append(stripped)
-            result = " ".join(text_lines)
-            return self._clean_text(result)
-        except ValueError:
-            pass
+    # Prompt phrases that mark the END of the description header / start of body
+    _DESC_START_MARKERS = [
+        "In one page or less",
+        "briefly describe the purpose",
+        "Brief Waiver Description.",
+    ]
+    # Phrases that mark the END of the description body
+    _DESC_STOP_MARKERS = [
+        "Components of the Waiver",
+        "Waiver Administration and Operation. Appendix A",
+        "The waiver application consists of",
+    ]
 
-        # Fallback: "briefly describe the purpose"
-        try:
-            i = self._get_index("briefly describe the purpose", document=self._document)
-            text_lines = []
-            for line in self._document[i + 1:]:
-                stripped = line.strip()
-                if not stripped:
-                    if text_lines:
-                        continue
-                    continue
-                if stripped.startswith("3.") or "Components of the Waiver" in stripped:
-                    break
-                if stripped.startswith("sv") and ":" in stripped:
-                    continue
-                text_lines.append(stripped)
-            result = " ".join(text_lines)
-            return self._clean_text(result)
-        except ValueError:
+    # Known prompt tail endings — description body begins right after these
+    _PROMPT_TAIL_ENDINGS = [
+        "andservice delivery methods.",
+        "and service delivery methods.",
+        "service delivery methods.",
+        "delivery methods.",
+    ]
+
+    def _extract_waiver_description(self) -> str:
+        """Extract Brief Waiver Description (between section 2 header and section 3)."""
+        start_line = None
+        inline_prefix = ""  # content on the same line as the marker, after the prompt
+
+        for marker in self._DESC_START_MARKERS:
+            try:
+                i = self._get_index(marker, document=self._document)
+                marker_line = self._document[i].strip()
+
+                # Check if description starts on the same line (after a known prompt tail)
+                for tail in self._PROMPT_TAIL_ENDINGS:
+                    if tail in marker_line:
+                        after = marker_line[marker_line.index(tail) + len(tail):].strip()
+                        if after:
+                            inline_prefix = after
+                        break
+
+                start_line = i + 1
+                break
+            except ValueError:
+                continue
+
+        if start_line is None:
             return ""
+
+        text_lines = [inline_prefix] if inline_prefix else []
+        skip_prompt_tail = not bool(inline_prefix)
+
+        for line in self._document[start_line:]:
+            stripped = line.strip()
+
+            # Stop at section 3 boundary — require the line to START with "3."
+            # or contain an unambiguous stop marker to avoid mid-sentence breaks
+            if any(m in stripped for m in self._DESC_STOP_MARKERS):
+                break
+            if stripped.startswith("3.") and any(
+                kw in stripped for kw in ["Components", "Waiver Request", "Brief"]
+            ):
+                break
+
+            # Skip artifact lines (form field IDs from text extraction)
+            if stripped.startswith("sv") and ":" in stripped:
+                continue
+
+            # Skip blank lines before the description body starts
+            if not stripped:
+                if skip_prompt_tail or not text_lines:
+                    continue
+                # Blank line mid-description: keep as space separator (don't break)
+                continue
+
+            # Once we hit a real content line, stop skipping prompt tail
+            skip_prompt_tail = False
+            text_lines.append(stripped)
+
+        return self._clean_text(" ".join(text_lines))
 
     # -------------------------------------------------------------------------
     # Transition Plans
