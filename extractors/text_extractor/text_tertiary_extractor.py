@@ -180,7 +180,7 @@ class TextTertiaryExtractor:
     # "Medicaid" matching "Other State Operating Agency / Medicaid" lines.
     _HEADER_PATTERNS = [
         ("inse",  ["Local Non-State"]),
-        ("ce",    ["Contracted Entity"]),
+        ("ce",    ["Contracted Entity", "Contracted"]),
         ("osa",   ["Other State Operating"]),
         ("ma",    ["Medicaid Agency", "Medicaid"]),
     ]
