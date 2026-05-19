@@ -6,6 +6,9 @@ lxml>=4.9.0
 # For PDF AcroForm extraction
 pypdf>=4.0.0
 
+# For visual radio-button fallback when PDFs are flattened (no AcroForm)
+pymupdf>=1.24.0
+
 # For notebook use
 jupyter>=1.0.0
 ipykernel>=6.0.0
