@@ -26,9 +26,6 @@ from typing import Optional, Dict, Any, List
 from bs4 import BeautifulSoup
 import pandas as pd
 
-from extractors._radio_collapse import collapse_radio_groups
-
-
 # =============================================================================
 # COLUMN DEFINITIONS
 # =============================================================================
@@ -36,8 +33,6 @@ from extractors._radio_collapse import collapse_radio_groups
 # Request Info (1 of 3): Title, Approval Period, Replaced Waiver, Waiver Type, Effective Date
 REQUEST_INFO_1_COLUMNS = [
     "title",
-    "approval_period",
-    "replacedwaiver",
     "waiver_type",
     "effective_date",
 ]
@@ -65,8 +60,6 @@ REQUEST_INFO_CONCURRENT_COLUMNS = [
 
 # Section 4: Waiver(s) Requested
 SECTION4_COLUMNS = [
-    "waive_1902a",
-    "waive_statewideness",
     "waive_geographic_limits",
     "waive_geographic_lipd",
 ]
@@ -89,24 +82,9 @@ B1_COLUMNS = [
     "sed_group",
 ]
 
-# Appendix B-2: Individual Cost Limit (split flags; collapsed to `costlimit` on output)
+# Appendix B-2: Individual Cost Limit
 B2_COLUMNS = [
-    "cost_limit_nolimit",
-    "cost_limit_excsinst_costs",
     "cost_limit_pcntaboveinstit",
-    "cost_limit_instit",
-    "cost_limit_lowerinstit",
-]
-
-# Appendix B-6: Evaluation/Reevaluation of Level of Care
-# Split flags; collapsed to `local_eval` and `local_eval_instrument` on output.
-B6_COLUMNS = [
-    "local_eval_a",
-    "local_eval_b",
-    "local_eval_c",
-    "local_eval_d",
-    "local_eval_instrument_same",
-    "local_eval_instrument_diff",
 ]
 
 # Appendix B-3: Number of Individuals Served
@@ -121,8 +99,6 @@ B3_COLUMNS = [
     "max_numberofbenes_year3",
     "max_numberofbenes_year4",
     "max_numberofbenes_year5",
-    "numberbenes_limited",
-    "phase_in_out_schedule",
     "entrantselection",
 ]
 
@@ -133,7 +109,6 @@ B4_COLUMNS = [
     "eligibility_3",
     "eligibility_4",
     "eligibility_5",
-    "eligibility_5_100",
     "eligibility_5_percent",
     "eligibility_6",
     "eligibility_7",
@@ -146,10 +121,7 @@ B4_COLUMNS = [
 
 # Appendix B-5: Post-Eligibility Treatment
 B5_COLUMNS = [
-    "special_hcbs",
     "spousal_impov_a",
-    "spousal_impov_b",
-    "spousal_impov_c",
 ]
 
 # All columns combined
@@ -164,7 +136,6 @@ ALL_COLUMNS = (
     + B3_COLUMNS
     + B4_COLUMNS
     + B5_COLUMNS
-    + B6_COLUMNS
 )
 
 
@@ -232,16 +203,18 @@ class HTMLTopExtractor:
     Extracts from Request Information (2 of 3) through Appendix B-5.
     """
 
-    def __init__(self, document_id: str, document: BeautifulSoup):
+    def __init__(self, document_id: str, document: BeautifulSoup, is_htm: bool = False):
         """
         Initialize with document ID and parsed HTML document.
 
         Args:
             document_id: The waiver document identifier
             document: BeautifulSoup parsed HTML document
+            is_htm: True for native .htm form files, False for PDF-converted .html files
         """
         self.document_id = document_id
         self.document = document
+        self._is_htm = is_htm
 
     # =========================================================================
     # HELPER METHODS
@@ -253,12 +226,48 @@ class HTMLTopExtractor:
             return 0
         return int("checked" in element.attrs)
 
-    def _get_checkbox_value_by_id(self, element_id: str) -> Optional[int]:
-        """Get checkbox/radio value by element ID: 1 if checked, 0 if not, None if not found."""
+    def _get_checkbox_value_by_id(self, element_id: str):
+        """Get checkbox value by element ID with format-aware logic.
+
+        .htm (native form): input present → use checked attribute; missing → try glyph fallback
+        .html (PDF-converted): input present → use checked attribute; missing → return "" (unreliable)
+        """
         element = self.document.find("input", {"id": element_id})
-        if element is None:
-            return None
-        return self._is_checked(element)
+        if element is not None:
+            return self._is_checked(element)
+
+        if not self._is_htm:
+            return ""
+
+        # .htm fallback: look for the glyph  near the element ID in surrounding text
+        tag = self.document.find(id=element_id)
+        if tag:
+            cell_text = tag.get_text()
+            if "" in cell_text:
+                return 1
+            if tag.find("br") or tag.find("span"):
+                return 0
+        return None
+
+    def _check_label_checkbox(self, label_text: str):
+        """Detect checkbox state for .htm files where checkboxes are rendered as
+        <p> tags with <span/> (unchecked) or the glyph  (checked).
+        Only used as fallback when no <input> element is found.
+        Returns 1 (checked), 0 (unchecked), or "" (not found / not .htm).
+        """
+        if not self._is_htm:
+            return ""
+        p = self.document.find(
+            lambda tag: tag.name == "p" and label_text in tag.get_text()
+        )
+        if p is None:
+            return ""
+        text = p.get_text()
+        if "" in text:
+            return 1
+        if p.find("span"):
+            return 0
+        return ""
 
     def _get_text_input_value_by_id(self, element_id: str) -> str:
         """Get text input value by element ID."""
@@ -267,16 +276,28 @@ class HTMLTopExtractor:
             return ""
         return element.attrs.get("value", "").strip()
 
+    def _clean_text(self, text: str) -> str:
+        """Remove page-break artifacts (URLs, dates) and normalize whitespace."""
+        if not text:
+            return ""
+        text = re.sub(
+            r"Application for 1915\(c\) HCBS Waiver:[^P]*Page \d+ of \d+", "", text
+        )
+        text = re.sub(r"https?://\S+\s*\d{1,2}/\d{1,2}/\d{4}", "", text)
+        text = re.sub(r"https?://\S+", "", text)
+        text = re.sub(r"\(\d{2}/\d{2}/\d{4}\)", "", text)
+        text = re.sub(r"\d{2}/\d{2}/\d{4}", "", text)
+        text = re.sub(r"\s+", " ", text)
+        return text.strip()
+
     def _get_textarea_value_by_id(self, element_id: str) -> str:
         """Get textarea content by element ID."""
         element = self.document.find("textarea", {"id": element_id})
         if element is None:
             return ""
         text = element.get_text().strip()
-        # Normalize whitespace
         text = re.sub(r"[\r\n]+", " ", text)
-        text = re.sub(r"\s+", " ", text)
-        return text.strip()
+        return self._clean_text(text)
 
     def _get_radio_button_text_by_name(self, name: str) -> Optional[str]:
         """Get the text label of the selected radio button by name attribute."""
@@ -310,7 +331,7 @@ class HTMLTopExtractor:
     def title(self) -> str:
         """Program Title (Section 1-B)."""
         try:
-            # HTM native form: <span id="...programTitle" class="inputTextLong">
+            # Native .htm: <span id="...programTitle">
             span = self.document.find(
                 "span", id=lambda x: x and x.endswith("programTitle")
             )
@@ -319,22 +340,21 @@ class HTMLTopExtractor:
                 if val:
                     return val
 
-            # PDF-converted HTML: <p>Program Title:</p><p class="s2">Title here</p>
-            label = self.document.find(string=lambda x: x and "Program Title" in str(x))
+            # PDF-converted: title is in the first non-empty <p> after the paragraph
+            # containing "optional - this title will be used to locate"
+            label = self.document.find(
+                string=lambda x: x
+                and "optional - this title will be used to locate" in str(x)
+            )
             if label:
-                parent = label.parent if label.parent else None
-                if parent:
-                    sibling = parent.find_next_sibling()
-                    if sibling:
-                        val = sibling.get_text().strip()
-                        if val:
-                            return val
-                # fallback: next <p> or <span> in document order
-                for tag in ("p", "span", "div", "textarea"):
-                    nxt = label.find_next(tag)
-                    if nxt:
+                p = label.find_parent("p")
+                if p:
+                    for nxt in p.find_next_siblings("p"):
                         val = nxt.get_text().strip()
-                        if val and "Program Title" not in val:
+                        # Stop if we've reached section C
+                        if "Type of Request" in val or val.startswith("C."):
+                            break
+                        if val:
                             return val
         except (AttributeError, TypeError):
             pass
@@ -362,20 +382,74 @@ class HTMLTopExtractor:
 
     @property
     def waiver_type(self) -> str:
-        """Type of Waiver (Section 1-D) - dropdown select."""
-        return self._get_dropdown_value_by_id("svgeninfo:ddlWaiverType")
+        """Type of Waiver (Section 1-D)."""
+        # Native .htm: dropdown select
+        val = self._get_dropdown_value_by_id("svgeninfo:ddlWaiverType")
+        if val:
+            return val
+        try:
+            label = self.document.find(
+                string=lambda x: x and "Type of Waiver" in str(x)
+            )
+            if label:
+                p = label.find_parent("p")
+                li = p.find_parent("li") if p else None
+
+                def _clean(tag):
+                    return re.sub(r"\s+", " ", tag.get_text(separator=" ")).strip()
+
+                # Forward: first non-empty <p> inside same <li> after label (.html layout)
+                if p:
+                    for nxt in p.find_next_siblings("p"):
+                        text = _clean(nxt)
+                        if text and "Proposed Effective" not in text and "select only one" not in text.lower():
+                            return text
+
+                # .htm layout: value is in <p class="s6"> inside the previous <li>
+                if li:
+                    prev_li = li.find_previous_sibling("li")
+                    if prev_li:
+                        s6 = prev_li.find("p", class_="s6")
+                        if s6:
+                            text = _clean(s6)
+                            if text:
+                                return text
+        except (AttributeError, TypeError):
+            pass
+        return ""
 
     @property
     def effective_date(self) -> str:
         """Proposed Effective Date (Section 1-E)."""
+        date_re = re.compile(r"\d{1,2}/\d{1,2}/\d{2,4}")
         try:
             elem = self.document.find(
                 string=lambda x: x and "Proposed Effective Date" in str(x)
             )
             if elem:
+                # Native .htm: value in adjacent input
                 inp = elem.find_next("input")
                 if inp:
-                    return inp.attrs.get("value", "").strip()
+                    val = inp.attrs.get("value", "").strip()
+                    if val:
+                        return val
+
+                # Inline date on the same text node (e.g. "Proposed Effective Date of Waiver: 10/01/17")
+                m = date_re.search(str(elem))
+                if m:
+                    return m.group()
+
+                # PDF-converted: search nearby <p> elements for a date
+                p = elem.find_parent("p")
+                if p:
+                    for nxt in p.find_next_siblings("p"):
+                        text = nxt.get_text().strip()
+                        # Stop at next major section
+                        if "Request Information (2" in text or "Level of Care" in text:
+                            break
+                        m = date_re.search(text)
+                        if m:
+                            return m.group()
         except (AttributeError, TypeError):
             pass
         return ""
@@ -387,7 +461,10 @@ class HTMLTopExtractor:
     @property
     def hospital_loc(self) -> Optional[int]:
         """Hospital level of care checkbox."""
-        return self._get_checkbox_value_by_id(LOC_CHECKBOX_IDS["hospital_loc"])
+        val = self._get_checkbox_value_by_id(LOC_CHECKBOX_IDS["hospital_loc"])
+        if val == "" or val is None:
+            val = self._check_label_checkbox("Hospital")
+        return val
 
     @property
     def hospital_loc_limits(self) -> str:
@@ -397,7 +474,10 @@ class HTMLTopExtractor:
     @property
     def nursing_facility_loc(self) -> Optional[int]:
         """Nursing facility level of care checkbox."""
-        return self._get_checkbox_value_by_id(LOC_CHECKBOX_IDS["nursing_facility_loc"])
+        val = self._get_checkbox_value_by_id(LOC_CHECKBOX_IDS["nursing_facility_loc"])
+        if val == "" or val is None:
+            val = self._check_label_checkbox("Nursing Facility")
+        return val
 
     @property
     def nursing_facility_loc_limits(self) -> str:
@@ -409,7 +489,10 @@ class HTMLTopExtractor:
     @property
     def ifc_loc(self) -> Optional[int]:
         """ICF/IID level of care checkbox."""
-        return self._get_checkbox_value_by_id(LOC_CHECKBOX_IDS["ifc_loc"])
+        val = self._get_checkbox_value_by_id(LOC_CHECKBOX_IDS["ifc_loc"])
+        if val == "" or val is None:
+            val = self._check_label_checkbox("Intermediate Care Facility for Individuals with Intellectual Disabilities")
+        return val
 
     @property
     def ifc_loc_limits(self) -> str:
@@ -570,11 +653,6 @@ class HTMLTopExtractor:
     # =========================================================================
     # APPENDIX B-2: INDIVIDUAL COST LIMIT
     # =========================================================================
-
-    @property
-    def cost_limit_nolimit(self) -> Optional[int]:
-        """B-2-a: No Cost Limit (option :0)."""
-        return self._get_checkbox_value_by_id("svapdxB2_1:elgIclType:0")
 
     @property
     def cost_limit_excsinst_costs(self) -> Optional[int]:
@@ -776,40 +854,6 @@ class HTMLTopExtractor:
         return self._get_checkbox_value_by_id("svapdxB5_1:elgIncSpoImpRlsType:1")
 
     # =========================================================================
-    # APPENDIX B-6: EVALUATION / REEVALUATION OF LEVEL OF CARE
-    # =========================================================================
-
-    @property
-    def local_eval_a(self) -> Optional[int]:
-        """B-6-b: Evaluations performed directly by the Medicaid agency."""
-        return self._get_checkbox_value_by_id("svapdxB6_1:elgEvalRespType:0")
-
-    @property
-    def local_eval_b(self) -> Optional[int]:
-        """B-6-b: Evaluations performed by the operating agency in Appendix A."""
-        return self._get_checkbox_value_by_id("svapdxB6_1:elgEvalRespType:1")
-
-    @property
-    def local_eval_c(self) -> Optional[int]:
-        """B-6-b: Evaluations performed by an entity under contract with the Medicaid agency."""
-        return self._get_checkbox_value_by_id("svapdxB6_1:elgEvalRespType:2")
-
-    @property
-    def local_eval_d(self) -> Optional[int]:
-        """B-6-b: Evaluations performed by an Other entity."""
-        return self._get_checkbox_value_by_id("svapdxB6_1:elgEvalRespType:3")
-
-    @property
-    def local_eval_instrument_same(self) -> Optional[int]:
-        """B-6-e: Same instrument used for waiver and institutional level of care."""
-        return self._get_checkbox_value_by_id("svapdxB6_1:elgEvalLOCInstType:0")
-
-    @property
-    def local_eval_instrument_diff(self) -> Optional[int]:
-        """B-6-e: Different instrument used for waiver vs. institutional level of care."""
-        return self._get_checkbox_value_by_id("svapdxB6_1:elgEvalLOCInstType:1")
-
-    # =========================================================================
     # MAIN EXTRACTION METHOD
     # =========================================================================
 
@@ -817,10 +861,8 @@ class HTMLTopExtractor:
         """Extract all data and return as a dictionary."""
         data = {"document_id": self.document_id}
 
-        # Request Info (1 of 3): Title, Approval Period, Replaced Waiver, Waiver Type, Effective Date
+        # Request Info (1 of 3): Title, Waiver Type, Effective Date
         data["title"] = self.title
-        data["approval_period"] = self.approval_period
-        data["replacedwaiver"] = self.replacedwaiver
         data["waiver_type"] = self.waiver_type
         data["effective_date"] = self.effective_date
 
@@ -842,8 +884,6 @@ class HTMLTopExtractor:
         data["dual_elg"] = self.dual_elg
 
         # Section 4: Waiver(s) Requested
-        data["waive_1902a"] = self.waive_1902a
-        data["waive_statewideness"] = self.waive_statewideness
         data["waive_geographic_limits"] = self.waive_geographic_limits
         data["waive_geographic_lipd"] = self.waive_geographic_lipd
 
@@ -864,11 +904,7 @@ class HTMLTopExtractor:
         data["sed_group"] = self.sed_group
 
         # Appendix B-2: Individual Cost Limit
-        data["cost_limit_nolimit"] = self.cost_limit_nolimit
-        data["cost_limit_excsinst_costs"] = self.cost_limit_excsinst_costs
         data["cost_limit_pcntaboveinstit"] = self.cost_limit_pcntaboveinstit
-        data["cost_limit_instit"] = self.cost_limit_instit
-        data["cost_limit_lowerinstit"] = self.cost_limit_lowerinstit
 
         # Appendix B-3: Number of Individuals Served
         data["numberofbenes_year1"] = self.numberofbenes_year1
@@ -881,8 +917,6 @@ class HTMLTopExtractor:
         data["max_numberofbenes_year3"] = self.max_numberofbenes_year3
         data["max_numberofbenes_year4"] = self.max_numberofbenes_year4
         data["max_numberofbenes_year5"] = self.max_numberofbenes_year5
-        data["numberbenes_limited"] = self.numberbenes_limited
-        data["phase_in_out_schedule"] = self.phase_in_out_schedule
         data["entrantselection"] = self.entrantselection
 
         # Appendix B-4: Eligibility Groups
@@ -891,7 +925,6 @@ class HTMLTopExtractor:
         data["eligibility_3"] = self.eligibility_3
         data["eligibility_4"] = self.eligibility_4
         data["eligibility_5"] = self.eligibility_5
-        data["eligibility_5_100"] = self.eligibility_5_100
         data["eligibility_5_percent"] = self.eligibility_5_percent
         data["eligibility_6"] = self.eligibility_6
         data["eligibility_7"] = self.eligibility_7
@@ -902,22 +935,7 @@ class HTMLTopExtractor:
         data["eligibility_12"] = self.eligibility_12
 
         # Appendix B-5: Post-Eligibility Treatment
-        data["special_hcbs"] = self.special_hcbs
         data["spousal_impov_a"] = self.spousal_impov_a
-        data["spousal_impov_b"] = self.spousal_impov_b
-        data["spousal_impov_c"] = self.spousal_impov_c
-
-        # Appendix B-6: Level-of-Care Evaluation
-        data["local_eval_a"] = self.local_eval_a
-        data["local_eval_b"] = self.local_eval_b
-        data["local_eval_c"] = self.local_eval_c
-        data["local_eval_d"] = self.local_eval_d
-        data["local_eval_instrument_same"] = self.local_eval_instrument_same
-        data["local_eval_instrument_diff"] = self.local_eval_instrument_diff
-
-        # Collapse split radio flags into merged categorical columns
-        # (costlimit, spousal_impov_bc, local_eval, local_eval_instrument).
-        data = collapse_radio_groups(data)
 
         return data
 
@@ -943,7 +961,8 @@ def process_single_file(file_path: str) -> Dict[str, Any]:
     """Process a single HTML file and extract all data."""
     doc_id = extract_document_id(file_path)
     document = load_html_document(file_path)
-    extractor = HTMLTopExtractor(doc_id, document)
+    is_htm = Path(file_path).suffix.lower() == ".htm"
+    extractor = HTMLTopExtractor(doc_id, document, is_htm=is_htm)
     return extractor.extract_all()
 
 
@@ -969,8 +988,11 @@ def process_directory(
             )
 
         try:
-            data = process_single_file(str(file_path))
-            results.append(data)
+            doc_id = extract_document_id(str(file_path))
+            document = load_html_document(str(file_path))
+            is_htm = file_path.suffix.lower() == ".htm"
+            extractor = HTMLTopExtractor(doc_id, document, is_htm=is_htm)
+            results.append(extractor.extract_all())
         except Exception as e:
             errors.append({"file": str(file_path), "error": str(e)})
             if verbose:

@@ -72,12 +72,13 @@ def run_html(input_dir: str, output_dir: str, tier: str, verbose: bool = True):
         try:
             doc_id = Path(fp).stem
             html = load_html(str(fp))
+            is_htm = fp.suffix.lower() == ".htm"
             if tier in ("top", "all"):
                 from bs4 import BeautifulSoup
                 doc = BeautifulSoup(html, "html.parser")
-                top_results.append(HTMLTopExtractor(doc_id, doc).extract_all())
+                top_results.append(HTMLTopExtractor(doc_id, doc, is_htm=is_htm).extract_all())
             if tier in ("tertiary", "all"):
-                tertiary_results.append(HTMLTertiaryExtractor(doc_id, html).extract_all())
+                tertiary_results.append(HTMLTertiaryExtractor(doc_id, html, is_htm=is_htm).extract_all())
         except Exception as e:
             errors.append({"file": str(fp), "error": str(e)})
             if verbose:

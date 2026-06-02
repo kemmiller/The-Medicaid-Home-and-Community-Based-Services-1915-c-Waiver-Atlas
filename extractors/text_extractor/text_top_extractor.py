@@ -26,8 +26,6 @@ from pathlib import Path
 from typing import Optional, Dict, Any, List
 import pandas as pd
 
-from extractors._radio_collapse import collapse_radio_groups
-
 
 # =============================================================================
 # COLUMN DEFINITIONS
@@ -36,8 +34,6 @@ from extractors._radio_collapse import collapse_radio_groups
 # Request Info (1 of 3): Title, Approval Period, Replaced Waiver, Waiver Type, Effective Date
 REQUEST_INFO_1_COLUMNS = [
     "title",
-    "approval_period",
-    "replacedwaiver",
     "waiver_type",
     "effective_date",
 ]
@@ -65,8 +61,6 @@ REQUEST_INFO_CONCURRENT_COLUMNS = [
 
 # Section 4: Waiver(s) Requested
 SECTION4_COLUMNS = [
-    "waive_1902a",
-    "waive_statewideness",
     "waive_geographic_limits",
     "waive_geographic_lipd",
 ]
@@ -89,13 +83,9 @@ B1_COLUMNS = [
     "sed_group",
 ]
 
-# Appendix B-2: Individual Cost Limit (split flags; collapsed to `costlimit` on output)
+# Appendix B-2: Individual Cost Limit
 B2_COLUMNS = [
-    "cost_limit_nolimit",
-    "cost_limit_excsinst_costs",
     "cost_limit_pcntaboveinstit",
-    "cost_limit_instit",
-    "cost_limit_lowerinstit",
 ]
 
 # Appendix B-3: Number of Individuals Served
@@ -110,8 +100,6 @@ B3_COLUMNS = [
     "max_numberofbenes_year3",
     "max_numberofbenes_year4",
     "max_numberofbenes_year5",
-    "numberbenes_limited",
-    "phase_in_out_schedule",
     "entrantselection",
 ]
 
@@ -122,7 +110,6 @@ B4_COLUMNS = [
     "eligibility_3",
     "eligibility_4",
     "eligibility_5",
-    "eligibility_5_100",
     "eligibility_5_percent",
     "eligibility_6",
     "eligibility_7",
@@ -135,10 +122,7 @@ B4_COLUMNS = [
 
 # Appendix B-5: Post-Eligibility Treatment
 B5_COLUMNS = [
-    "special_hcbs",
     "spousal_impov_a",
-    "spousal_impov_b",
-    "spousal_impov_c",
 ]
 
 # All columns combined
@@ -200,13 +184,13 @@ class TextTopExtractor:
                     return i
         raise ValueError(f"Could not find path {path} in document")
 
-    def _is_checkbox_checked(self, checkbox_value: str) -> int:
-        """Convert checkbox text to int: Yes=1, Off=0."""
+    def _is_checkbox_checked(self, checkbox_value: str) -> Optional[int]:
+        """Convert checkbox text to int: Yes=1, Off=0, anything else=None."""
         if checkbox_value == "Yes":
             return 1
         elif checkbox_value == "Off":
             return 0
-        return 0
+        return None
 
     def _get_checkbox_value(self, *path: str) -> Optional[int]:
         """Get checkbox value (Yes=1, Off=0) by finding the path markers."""
@@ -215,6 +199,18 @@ class TextTopExtractor:
         except ValueError:
             return None
         return self._is_checkbox_checked(self[i - 1])
+
+    def _clean_text(self, text: str) -> str:
+        """Remove page-break artifacts (URLs, dates) and normalize whitespace."""
+        if not text:
+            return ""
+        text = re.sub(r"Application for 1915\(c\) HCBS Waiver:[^P]*Page \d+ of \d+", "", text)
+        text = re.sub(r"https?://\S+\s*\d{1,2}/\d{1,2}/\d{4}", "", text)
+        text = re.sub(r"https?://\S+", "", text)
+        text = re.sub(r"\(\d{2}/\d{2}/\d{4}\)", "", text)
+        text = re.sub(r"\d{2}/\d{2}/\d{4}", "", text)
+        text = re.sub(r"\s+", " ", text)
+        return text.strip()
 
     def _is_numeric(self, value: str) -> bool:
         """Check if a string is numeric."""
@@ -350,19 +346,31 @@ class TextTopExtractor:
 
     @property
     def title(self) -> str:
-        """Program Title (Section 1-B)."""
+        """Program Title (Section 1-B).
+
+        Two layouts seen in the wild:
+          - Inline:  'Program Title (...optional...): Elderly, Blind, and Disabled'
+          - Separate: 'Program Title (...optional):' then title on the next non-empty line
+        """
         try:
-            start_idx = self._get_index("Program Title")
-            text_lines = []
-            for i in range(start_idx + 1, min(start_idx + 20, len(self._no_newline_document))):
-                line = self._no_newline_document[i].strip()
-                if line.startswith("C.") or "Type of Request" in line:
-                    break
-                if line and not line.startswith("svgeninfo") and line not in ["on", "Off", "Yes"]:
-                    text_lines.append(line)
-            return " ".join(text_lines).strip()
+            for i, line in enumerate(self._no_newline_document):
+                # Match both "optional - this" and "optional -this" (no space variant)
+                if "optional" in line and "this title will be used to locate" in line:
+                    # Inline: title follows the colon on the same line
+                    if ":" in line:
+                        after = line.split(":")[-1].strip()
+                        if after and not after.startswith("svgeninfo"):
+                            return after
+                    # Separate: title is on the next non-empty, non-artifact line
+                    for j in range(i + 1, min(i + 6, len(self._no_newline_document))):
+                        nxt = self._no_newline_document[j].strip()
+                        if nxt and not nxt.startswith("svgeninfo") and nxt not in ["on", "Off", "Yes"]:
+                            if "Type of Request" in nxt or nxt.startswith("C."):
+                                break
+                            return nxt
         except:
-            return ""
+            pass
+        return ""
 
     @property
     def approval_period(self) -> str:
@@ -370,31 +378,21 @@ class TextTopExtractor:
         return ""
 
     @property
-    def replacedwaiver(self) -> str:
-        """Replacing Waiver Number (Section 1-A)."""
-        try:
-            for i, line in enumerate(self._no_newline_document):
-                if "Replacing Waiver Number" in line:
-                    after = line.split("Replacing Waiver Number")[-1].strip().strip(":").strip()
-                    if after:
-                        return after
-                    if i + 1 < len(self._no_newline_document):
-                        next_line = self._no_newline_document[i + 1].strip()
-                        if next_line and "Base Waiver" not in next_line and "Waiver Number" not in next_line:
-                            return next_line
-                    return ""
-        except:
-            pass
-        return ""
-
-    @property
     def waiver_type(self) -> str:
-        """Type of Waiver (Section 1-D)."""
+        """Type of Waiver (Section 1-D).
+
+        Always appears as the first non-empty line after 'Type of Waiver (select only one):'.
+        """
         try:
             start_idx = self._get_index("Type of Waiver (select only one)")
-            for i in range(start_idx + 1, min(start_idx + 5, len(self._no_newline_document))):
+            for i in range(start_idx + 1, min(start_idx + 8, len(self._no_newline_document))):
                 line = self._no_newline_document[i].strip()
-                if line and line not in ["on", "Off", "Yes"] and not line.startswith("E.") and "Proposed Effective" not in line:
+                # Stop at section E boundary
+                if (line.startswith("E.") or "Proposed Effective" in line
+                        or "Approved Effective" in line):
+                    break
+                if (line and line not in ["on", "Off", "Yes"]
+                        and not line.startswith("svgeninfo")):
                     return line
         except:
             pass
@@ -402,13 +400,39 @@ class TextTopExtractor:
 
     @property
     def effective_date(self) -> str:
-        """Proposed Effective Date (Section 1-E)."""
+        """Proposed Effective Date (Section 1-E).
+
+        Three layouts:
+          - Bare date on next line after 'Proposed Effective Date' (AK)
+          - Inline: 'Proposed Effective Date of Waiver being Amended: 07/01/19' (CA)
+          - No date present; use 'Approved Effective Date: MM/DD/YY' as fallback (CO)
+        """
+        date_re = re.compile(r"\d{1,2}/\d{1,2}/\d{2,4}")
         try:
-            start_idx = self._get_index("Proposed Effective Date")
-            for i in range(start_idx + 1, min(start_idx + 5, len(self._no_newline_document))):
-                line = self._no_newline_document[i].strip()
-                if re.match(r"\d{2}/\d{2}/\d{2,4}", line):
-                    return line
+            for i, line in enumerate(self._no_newline_document):
+                if "Proposed Effective Date" not in line:
+                    continue
+                # Inline date on same line
+                m = date_re.search(line)
+                if m:
+                    return m.group()
+                # Date on next non-empty lines
+                for j in range(i + 1, min(i + 6, len(self._no_newline_document))):
+                    nxt = self._no_newline_document[j].strip()
+                    m = date_re.match(nxt)
+                    if m:
+                        return m.group()
+                    # Stop if we hit the next section
+                    if nxt.startswith("1. Request Information (2"):
+                        break
+                # Fallback: Approved Effective Date near this line
+                for j in range(i, min(i + 10, len(self._no_newline_document))):
+                    nxt = self._no_newline_document[j]
+                    if "Approved Effective Date" in nxt:
+                        m = date_re.search(nxt)
+                        if m:
+                            return m.group()
+                break
         except:
             pass
         return ""
@@ -589,7 +613,7 @@ class TextTopExtractor:
                     ):
                         text_lines.append(line)
 
-            return " ".join(text_lines).strip()
+            return self._clean_text(" ".join(text_lines))
         except:
             pass
         return ""
@@ -623,7 +647,7 @@ class TextTopExtractor:
                     ):
                         text_lines.append(line)
 
-            return " ".join(text_lines).strip()
+            return self._clean_text(" ".join(text_lines))
         except:
             pass
         return ""
@@ -837,13 +861,6 @@ class TextTopExtractor:
     # =========================================================================
 
     @property
-    def cost_limit_nolimit(self) -> Optional[int]:
-        """B-2-a: No Cost Limit (the state does not apply an individual cost limit)."""
-        return self._get_radio_selection_by_marker(
-            "B-2: Individual Cost Limit", "No Cost Limit"
-        )
-
-    @property
     def cost_limit_excsinst_costs(self) -> Optional[int]:
         """B-2-a: Cost Limit in Excess of Institutional Costs."""
         return self._get_radio_selection_by_marker(
@@ -999,7 +1016,7 @@ class TextTopExtractor:
                 ):
                     text_lines.append(line)
 
-            return " ".join(text_lines).strip()
+            return self._clean_text(" ".join(text_lines))
         except:
             pass
         return ""
@@ -1187,10 +1204,8 @@ class TextTopExtractor:
         """Extract all data and return as a dictionary."""
         data = {"document_id": self.document_id}
 
-        # Request Info (1 of 3): Title, Approval Period, Replaced Waiver, Waiver Type, Effective Date
+        # Request Info (1 of 3): Title, Waiver Type, Effective Date
         data["title"] = self.title
-        data["approval_period"] = self.approval_period
-        data["replacedwaiver"] = self.replacedwaiver
         data["waiver_type"] = self.waiver_type
         data["effective_date"] = self.effective_date
 
@@ -1212,8 +1227,6 @@ class TextTopExtractor:
         data["dual_elg"] = self.dual_elg
 
         # Section 4: Waiver(s) Requested
-        data["waive_1902a"] = self.waive_1902a
-        data["waive_statewideness"] = self.waive_statewideness
         data["waive_geographic_limits"] = self.waive_geographic_limits
         data["waive_geographic_lipd"] = self.waive_geographic_lipd
 
@@ -1235,11 +1248,7 @@ class TextTopExtractor:
         data["sed_group"] = target_data.get("sed_group", None)
 
         # Appendix B-2: Individual Cost Limit
-        data["cost_limit_nolimit"] = self.cost_limit_nolimit
-        data["cost_limit_excsinst_costs"] = self.cost_limit_excsinst_costs
         data["cost_limit_pcntaboveinstit"] = self.cost_limit_pcntaboveinstit
-        data["cost_limit_instit"] = self.cost_limit_instit
-        data["cost_limit_lowerinstit"] = self.cost_limit_lowerinstit
 
         # Appendix B-3: Number of Individuals Served
         data["numberofbenes_year1"] = self.numberofbenes_year1
@@ -1252,8 +1261,6 @@ class TextTopExtractor:
         data["max_numberofbenes_year3"] = self.max_numberofbenes_year3
         data["max_numberofbenes_year4"] = self.max_numberofbenes_year4
         data["max_numberofbenes_year5"] = self.max_numberofbenes_year5
-        data["numberbenes_limited"] = self.numberbenes_limited
-        data["phase_in_out_schedule"] = self.phase_in_out_schedule
         data["entrantselection"] = self.entrantselection
 
         # Appendix B-4: Eligibility Groups
@@ -1262,7 +1269,6 @@ class TextTopExtractor:
         data["eligibility_3"] = self.eligibility_3
         data["eligibility_4"] = self.eligibility_4
         data["eligibility_5"] = self.eligibility_5
-        data["eligibility_5_100"] = self.eligibility_5_100
         data["eligibility_5_percent"] = self.eligibility_5_percent
         data["eligibility_6"] = self.eligibility_6
         data["eligibility_7"] = self.eligibility_7
@@ -1273,15 +1279,7 @@ class TextTopExtractor:
         data["eligibility_12"] = self.eligibility_12
 
         # Appendix B-5: Post-Eligibility Treatment
-        data["special_hcbs"] = self.special_hcbs
         data["spousal_impov_a"] = self.spousal_impov_a
-        data["spousal_impov_b"] = self.spousal_impov_b
-        data["spousal_impov_c"] = self.spousal_impov_c
-
-        # Collapse split radio flags into merged categorical columns
-        # (costlimit, spousal_impov_bc). B-6 local_eval extraction in the
-        # text extractor is on the backlog (see docs/priority_list.txt).
-        data = collapse_radio_groups(data)
 
         return data
 
