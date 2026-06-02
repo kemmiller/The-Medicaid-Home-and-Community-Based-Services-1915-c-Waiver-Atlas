@@ -250,10 +250,11 @@ class HTMLTopExtractor:
         return None
 
     def _check_label_checkbox(self, label_text: str):
-        """Detect checkbox state for .htm files where checkboxes are rendered as
-        <p> tags with <span/> (unchecked) or the glyph  (checked).
-        Only used as fallback when no <input> element is found.
-        Returns 1 (checked), 0 (unchecked), or "" (not found / not .htm).
+        """Detect checkbox state for .htm files.
+
+        Finds the <p> containing label_text, then checks the raw HTML immediately
+        before the label for the glyph (checked) or <span/> (unchecked).
+        Returns 1, 0, or "" (not found / not .htm).
         """
         if not self._is_htm:
             return ""
@@ -262,10 +263,20 @@ class HTMLTopExtractor:
         )
         if p is None:
             return ""
-        text = p.get_text()
-        if "" in text:
+
+        # Use raw HTML string: find what appears immediately before label_text
+        raw = str(p)
+        label_pos = raw.find(label_text)
+        if label_pos == -1:
+            return ""
+
+        # Look at the ~100 chars of raw HTML before the label
+        pre = raw[:label_pos]
+        # Glyph character \ue008 indicates checked
+        if "\ue008" in pre:
             return 1
-        if p.find("span"):
+        # <span/> immediately before means unchecked
+        if "<span/>" in pre or "<span>" in pre:
             return 0
         return ""
 
@@ -402,7 +413,11 @@ class HTMLTopExtractor:
                 if p:
                     for nxt in p.find_next_siblings("p"):
                         text = _clean(nxt)
-                        if text and "Proposed Effective" not in text and "select only one" not in text.lower():
+                        if (
+                            text
+                            and "Proposed Effective" not in text
+                            and "select only one" not in text.lower()
+                        ):
                             return text
 
                 # .htm layout: value is in <p class="s6"> inside the previous <li>
@@ -491,7 +506,9 @@ class HTMLTopExtractor:
         """ICF/IID level of care checkbox."""
         val = self._get_checkbox_value_by_id(LOC_CHECKBOX_IDS["ifc_loc"])
         if val == "" or val is None:
-            val = self._check_label_checkbox("Intermediate Care Facility for Individuals with Intellectual Disabilities")
+            val = self._check_label_checkbox(
+                "Intermediate Care Facility for Individuals with Intellectual Disabilities"
+            )
         return val
 
     @property
@@ -506,49 +523,68 @@ class HTMLTopExtractor:
     @property
     def concurrent_1915a(self) -> Optional[int]:
         """Services under §1915(a)(1)(a) checkbox."""
-        return self._get_checkbox_value_by_id(
+        val = self._get_checkbox_value_by_id(
             CONCURRENT_CHECKBOX_IDS["concurrent_1915a"]
         )
+        if val == "" or val is None:
+            val = self._check_label_checkbox("§1915(a)(1)(a)")
+        return val
 
     @property
     def concurrent_1915b(self) -> Optional[int]:
         """Waiver(s) under §1915(b) checkbox."""
-        return self._get_checkbox_value_by_id(
+        val = self._get_checkbox_value_by_id(
             CONCURRENT_CHECKBOX_IDS["concurrent_1915b"]
         )
+        if val == "" or val is None:
+            val = self._check_label_checkbox("§1915(b) of the Act")
+        return val
 
     @property
     def concurrent_1932a(self) -> Optional[int]:
         """Program under §1932(a) checkbox."""
-        return self._get_checkbox_value_by_id(
+        val = self._get_checkbox_value_by_id(
             CONCURRENT_CHECKBOX_IDS["concurrent_1932a"]
         )
+        if val == "" or val is None:
+            val = self._check_label_checkbox("§1932(a) of the Act")
+        return val
 
     @property
     def concurrent_1915i(self) -> Optional[int]:
         """Program under §1915(i) checkbox."""
-        return self._get_checkbox_value_by_id(
+        val = self._get_checkbox_value_by_id(
             CONCURRENT_CHECKBOX_IDS["concurrent_1915i"]
         )
+        if val == "" or val is None:
+            val = self._check_label_checkbox("§1915(i) of the Act")
+        return val
 
     @property
     def concurrent_1915j(self) -> Optional[int]:
         """Program under §1915(j) checkbox."""
-        return self._get_checkbox_value_by_id(
+        val = self._get_checkbox_value_by_id(
             CONCURRENT_CHECKBOX_IDS["concurrent_1915j"]
         )
+        if val == "" or val is None:
+            val = self._check_label_checkbox("§1915(j) of the Act")
+        return val
 
     @property
     def concurrent_1115(self) -> Optional[int]:
         """Program under §1115 checkbox."""
-        return self._get_checkbox_value_by_id(
-            CONCURRENT_CHECKBOX_IDS["concurrent_1115"]
-        )
+        val = self._get_checkbox_value_by_id(CONCURRENT_CHECKBOX_IDS["concurrent_1115"])
+        if val == "" or val is None:
+            val = self._check_label_checkbox("§1115 of the Act")
+        return val
 
     @property
     def dual_elg(self) -> Optional[int]:
         """Dual eligibility for Medicaid and Medicare checkbox."""
-        return self._get_checkbox_value_by_id(CONCURRENT_CHECKBOX_IDS["dual_elg"])
+        val = self._get_checkbox_value_by_id(CONCURRENT_CHECKBOX_IDS["dual_elg"])
+        if val == "" or val is None:
+            val = self._check_label_checkbox("eligible for both Medicare and Medicaid")
+        return val
 
     # =========================================================================
     # SECTION 4: WAIVER(S) REQUESTED
@@ -578,77 +614,162 @@ class HTMLTopExtractor:
     # APPENDIX B-1: TARGET GROUPS
     # =========================================================================
 
+    # Subgroup label → variable name mapping for table-based fallback
+    _B1_LABEL_MAP = {
+        "Aged": "aged_group",
+        "Disabled (Physical)": "physicaldis_group",
+        "Disabled (Other)": "otherdis_group",
+        "Brain Injury": "braininjury_group",
+        "HIV/AIDS": "hivaids_group",
+        "Medically Fragile": "medicallyfrail_group",
+        "Technology Dependent": "techdep_group",
+        "Autism": "autism_group",
+        "Developmental Disability": "dd_group",
+        "Intellectual Disability": "id_group",
+        "Mental Illness": "mi_group",
+        "Serious Emotional Disturbance": "sed_group",
+    }
+
+    def _parse_b1_table(self) -> dict:
+        """Parse the B-1 target groups table for .htm files.
+
+        Table structure per data row:
+          col 0: Target Group (section header, spans full width)
+          col 1: Included checkbox (<p class="s23"> with glyph or <span/>)
+          col 2: Target SubGroup label (<p class="s22">)
+          col 3-5: Minimum Age cells (<p class="s31"> contains value)
+          col 6-9: Maximum Age cells (<p class="s31"> contains value)
+        """
+        result = {}
+        if not self._is_htm:
+            return result
+
+        # Find the B-1 table by locating the "Target Group" header cell
+        table = None
+        for t in self.document.find_all("table"):
+            if "Target Group" in t.get_text() and "Included" in t.get_text():
+                table = t
+                break
+        if not table:
+            return result
+
+        for row in table.find_all("tr"):
+            cells = row.find_all("td")
+            if len(cells) < 3:
+                continue
+
+            # 10-column data row: col[1]=checkbox, col[2]=label, col[4]=min age
+            if len(cells) >= 6:
+                checkbox_cell = cells[1]
+                label_cell = cells[2]
+                min_age_cell = cells[4]
+                # Max age: last meaningful cell (col 7 or similar)
+                max_age_cell = cells[7] if len(cells) > 7 else None
+
+                label_text = label_cell.get_text().strip()
+                var_name = self._B1_LABEL_MAP.get(label_text)
+                if not var_name:
+                    continue
+
+                # Checkbox: glyph = checked, span = unchecked
+                cell_text = checkbox_cell.get_text()
+                if "" in cell_text:
+                    result[var_name] = 1
+                elif checkbox_cell.find("span"):
+                    result[var_name] = 0
+
+                # Age values (only for aged_group)
+                if var_name == "aged_group":
+                    min_p = (
+                        min_age_cell.find("p", class_="s31") if min_age_cell else None
+                    )
+                    if min_p:
+                        result["aged_group_min"] = min_p.get_text().strip()
+                    if max_age_cell:
+                        max_p = max_age_cell.find("p", class_="s31")
+                        if max_p:
+                            result["aged_group_max"] = max_p.get_text().strip()
+
+        return result
+
+    def _b1(self, key: str, element_id: str):
+        """Get target group checkbox: try element ID first, then table fallback."""
+        val = self._get_checkbox_value_by_id(element_id)
+        if (val == "" or val is None) and self._is_htm:
+            val = self._parse_b1_table().get(key, "")
+        return val
+
     # Aged or Disabled - General
     @property
     def aged_group(self) -> Optional[int]:
-        return self._get_checkbox_value_by_id(TARGET_GROUP_CHECKBOX_IDS["aged_group"])
+        return self._b1("aged_group", TARGET_GROUP_CHECKBOX_IDS["aged_group"])
 
     @property
     def aged_group_min(self) -> str:
-        return self._get_text_input_value_by_id(TARGET_GROUP_MIN_IDS["aged_group_min"])
+        val = self._get_text_input_value_by_id(TARGET_GROUP_MIN_IDS["aged_group_min"])
+        if not val and self._is_htm:
+            val = self._parse_b1_table().get("aged_group_min", "")
+        return val
 
     @property
     def aged_group_max(self) -> str:
-        return self._get_text_input_value_by_id(TARGET_GROUP_MAX_IDS["aged_group_max"])
+        val = self._get_text_input_value_by_id(TARGET_GROUP_MAX_IDS["aged_group_max"])
+        if not val and self._is_htm:
+            val = self._parse_b1_table().get("aged_group_max", "")
+        return val
 
     @property
     def physicaldis_group(self) -> Optional[int]:
-        return self._get_checkbox_value_by_id(
-            TARGET_GROUP_CHECKBOX_IDS["physicaldis_group"]
+        return self._b1(
+            "physicaldis_group", TARGET_GROUP_CHECKBOX_IDS["physicaldis_group"]
         )
 
     @property
     def otherdis_group(self) -> Optional[int]:
-        return self._get_checkbox_value_by_id(
-            TARGET_GROUP_CHECKBOX_IDS["otherdis_group"]
-        )
+        return self._b1("otherdis_group", TARGET_GROUP_CHECKBOX_IDS["otherdis_group"])
 
     # Aged or Disabled - Specific Subgroups
     @property
     def braininjury_group(self) -> Optional[int]:
-        return self._get_checkbox_value_by_id(
-            TARGET_GROUP_CHECKBOX_IDS["braininjury_group"]
+        return self._b1(
+            "braininjury_group", TARGET_GROUP_CHECKBOX_IDS["braininjury_group"]
         )
 
     @property
     def hivaids_group(self) -> Optional[int]:
-        return self._get_checkbox_value_by_id(
-            TARGET_GROUP_CHECKBOX_IDS["hivaids_group"]
-        )
+        return self._b1("hivaids_group", TARGET_GROUP_CHECKBOX_IDS["hivaids_group"])
 
     @property
     def medicallyfrail_group(self) -> Optional[int]:
-        return self._get_checkbox_value_by_id(
-            TARGET_GROUP_CHECKBOX_IDS["medicallyfrail_group"]
+        return self._b1(
+            "medicallyfrail_group", TARGET_GROUP_CHECKBOX_IDS["medicallyfrail_group"]
         )
 
     @property
     def techdep_group(self) -> Optional[int]:
-        return self._get_checkbox_value_by_id(
-            TARGET_GROUP_CHECKBOX_IDS["techdep_group"]
-        )
+        return self._b1("techdep_group", TARGET_GROUP_CHECKBOX_IDS["techdep_group"])
 
     # Intellectual/Developmental Disability
     @property
     def autism_group(self) -> Optional[int]:
-        return self._get_checkbox_value_by_id(TARGET_GROUP_CHECKBOX_IDS["autism_group"])
+        return self._b1("autism_group", TARGET_GROUP_CHECKBOX_IDS["autism_group"])
 
     @property
     def dd_group(self) -> Optional[int]:
-        return self._get_checkbox_value_by_id(TARGET_GROUP_CHECKBOX_IDS["dd_group"])
+        return self._b1("dd_group", TARGET_GROUP_CHECKBOX_IDS["dd_group"])
 
     @property
     def id_group(self) -> Optional[int]:
-        return self._get_checkbox_value_by_id(TARGET_GROUP_CHECKBOX_IDS["id_group"])
+        return self._b1("id_group", TARGET_GROUP_CHECKBOX_IDS["id_group"])
 
     # Mental Illness
     @property
     def mi_group(self) -> Optional[int]:
-        return self._get_checkbox_value_by_id(TARGET_GROUP_CHECKBOX_IDS["mi_group"])
+        return self._b1("mi_group", TARGET_GROUP_CHECKBOX_IDS["mi_group"])
 
     @property
     def sed_group(self) -> Optional[int]:
-        return self._get_checkbox_value_by_id(TARGET_GROUP_CHECKBOX_IDS["sed_group"])
+        return self._b1("sed_group", TARGET_GROUP_CHECKBOX_IDS["sed_group"])
 
     # =========================================================================
     # APPENDIX B-2: INDIVIDUAL COST LIMIT
@@ -678,45 +799,91 @@ class HTMLTopExtractor:
     # APPENDIX B-3: NUMBER OF INDIVIDUALS SERVED
     # =========================================================================
 
+    def _parse_b3_table(self, table_label: str) -> dict:
+        """Parse a B-3 table (B-3-a or B-3-b) for .htm files.
+
+        Each year row has <p class="s22">Year N</p> in col 0 and the value
+        in <p class="s31"> in the middle column.
+        Returns {1: val, 2: val, ...} for years 1-5.
+        """
+        if not self._is_htm:
+            return {}
+        table = None
+        for p in self.document.find_all("p", class_="s32"):
+            if table_label in p.get_text():
+                table = p.find_next("table")
+                break
+        if not table:
+            return {}
+
+        result = {}
+        for row in table.find_all("tr"):
+            cells = row.find_all("td")
+            # Year label cell
+            year_text = cells[0].get_text().strip() if cells else ""
+            for yr in range(1, 6):
+                if f"Year {yr}" in year_text:
+                    # Value is in <p class="s31"> anywhere in this row or next sibling row
+                    val_p = row.find("p", class_="s31")
+                    if not val_p:
+                        # Value may be in the next <tr>
+                        next_row = row.find_next_sibling("tr")
+                        if next_row:
+                            val_p = next_row.find("p", class_="s31")
+                    if val_p:
+                        result[yr] = val_p.get_text().strip()
+                    break
+        return result
+
     @property
     def numberofbenes_year1(self) -> str:
-        return self._get_text_input_value_by_id("svapdxB3_1:elgQtyYr1")
+        val = self._get_text_input_value_by_id("svapdxB3_1:elgQtyYr1")
+        return val or self._parse_b3_table("B-3-a").get(1, "")
 
     @property
     def numberofbenes_year2(self) -> str:
-        return self._get_text_input_value_by_id("svapdxB3_1:elgQtyYr2")
+        val = self._get_text_input_value_by_id("svapdxB3_1:elgQtyYr2")
+        return val or self._parse_b3_table("B-3-a").get(2, "")
 
     @property
     def numberofbenes_year3(self) -> str:
-        return self._get_text_input_value_by_id("svapdxB3_1:elgQtyYr3")
+        val = self._get_text_input_value_by_id("svapdxB3_1:elgQtyYr3")
+        return val or self._parse_b3_table("B-3-a").get(3, "")
 
     @property
     def numberofbenes_year4(self) -> str:
-        return self._get_text_input_value_by_id("svapdxB3_1:elgQtyYr4")
+        val = self._get_text_input_value_by_id("svapdxB3_1:elgQtyYr4")
+        return val or self._parse_b3_table("B-3-a").get(4, "")
 
     @property
     def numberofbenes_year5(self) -> str:
-        return self._get_text_input_value_by_id("svapdxB3_1:elgQtyYr5")
+        val = self._get_text_input_value_by_id("svapdxB3_1:elgQtyYr5")
+        return val or self._parse_b3_table("B-3-a").get(5, "")
 
     @property
     def max_numberofbenes_year1(self) -> str:
-        return self._get_text_input_value_by_id("svapdxB3_1:elgQtyMaxYr1")
+        val = self._get_text_input_value_by_id("svapdxB3_1:elgQtyMaxYr1")
+        return val or self._parse_b3_table("B-3-b").get(1, "")
 
     @property
     def max_numberofbenes_year2(self) -> str:
-        return self._get_text_input_value_by_id("svapdxB3_1:elgQtyMaxYr2")
+        val = self._get_text_input_value_by_id("svapdxB3_1:elgQtyMaxYr2")
+        return val or self._parse_b3_table("B-3-b").get(2, "")
 
     @property
     def max_numberofbenes_year3(self) -> str:
-        return self._get_text_input_value_by_id("svapdxB3_1:elgQtyMaxYr3")
+        val = self._get_text_input_value_by_id("svapdxB3_1:elgQtyMaxYr3")
+        return val or self._parse_b3_table("B-3-b").get(3, "")
 
     @property
     def max_numberofbenes_year4(self) -> str:
-        return self._get_text_input_value_by_id("svapdxB3_1:elgQtyMaxYr4")
+        val = self._get_text_input_value_by_id("svapdxB3_1:elgQtyMaxYr4")
+        return val or self._parse_b3_table("B-3-b").get(4, "")
 
     @property
     def max_numberofbenes_year5(self) -> str:
-        return self._get_text_input_value_by_id("svapdxB3_1:elgQtyMaxYr5")
+        val = self._get_text_input_value_by_id("svapdxB3_1:elgQtyMaxYr5")
+        return val or self._parse_b3_table("B-3-b").get(5, "")
 
     @property
     def numberbenes_limited(self) -> Optional[str]:
@@ -743,7 +910,34 @@ class HTMLTopExtractor:
     @property
     def entrantselection(self) -> str:
         """B-3 (3 of 4): Selection of Entrants to the Waiver."""
-        return self._get_textarea_value_by_id("svapdxB3_3:elgQtyEntSelDesc")
+        val = self._get_textarea_value_by_id("svapdxB3_3:elgQtyEntSelDesc")
+        if not val and self._is_htm:
+            try:
+                label = self.document.find(
+                    string=lambda x: x
+                    and "Selection of Entrants to the Waiver" in str(x)
+                )
+                if label:
+                    p = label.find_parent("p")
+                    if p:
+                        text_parts = []
+                        for nxt in p.find_next_siblings("p"):
+                            text = nxt.get_text().strip()
+                            if not text:
+                                continue
+                            if "Appendix B" in text or "B-4" in text:
+                                break
+                            # Skip the boilerplate prompt lines
+                            if "Specify the policies" in text or text in (
+                                "waiver:",
+                                "waiver",
+                            ):
+                                continue
+                            text_parts.append(text)
+                        val = self._clean_text(" ".join(text_parts))
+            except (AttributeError, TypeError):
+                pass
+        return val
 
     # =========================================================================
     # APPENDIX B-4: ELIGIBILITY GROUPS
