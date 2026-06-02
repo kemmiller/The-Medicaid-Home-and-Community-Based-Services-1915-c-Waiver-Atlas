@@ -26,6 +26,8 @@ from typing import Optional, Dict, Any, List
 from bs4 import BeautifulSoup
 import pandas as pd
 
+from extractors._radio_collapse import collapse_radio_groups
+
 
 # =============================================================================
 # COLUMN DEFINITIONS
@@ -87,12 +89,24 @@ B1_COLUMNS = [
     "sed_group",
 ]
 
-# Appendix B-2: Individual Cost Limit
+# Appendix B-2: Individual Cost Limit (split flags; collapsed to `costlimit` on output)
 B2_COLUMNS = [
+    "cost_limit_nolimit",
     "cost_limit_excsinst_costs",
     "cost_limit_pcntaboveinstit",
     "cost_limit_instit",
     "cost_limit_lowerinstit",
+]
+
+# Appendix B-6: Evaluation/Reevaluation of Level of Care
+# Split flags; collapsed to `local_eval` and `local_eval_instrument` on output.
+B6_COLUMNS = [
+    "local_eval_a",
+    "local_eval_b",
+    "local_eval_c",
+    "local_eval_d",
+    "local_eval_instrument_same",
+    "local_eval_instrument_diff",
 ]
 
 # Appendix B-3: Number of Individuals Served
@@ -150,6 +164,7 @@ ALL_COLUMNS = (
     + B3_COLUMNS
     + B4_COLUMNS
     + B5_COLUMNS
+    + B6_COLUMNS
 )
 
 
@@ -557,6 +572,11 @@ class HTMLTopExtractor:
     # =========================================================================
 
     @property
+    def cost_limit_nolimit(self) -> Optional[int]:
+        """B-2-a: No Cost Limit (option :0)."""
+        return self._get_checkbox_value_by_id("svapdxB2_1:elgIclType:0")
+
+    @property
     def cost_limit_excsinst_costs(self) -> Optional[int]:
         """B-2-a: Cost Limit in Excess of Institutional Costs."""
         return self._get_checkbox_value_by_id("svapdxB2_1:elgIclType:1")
@@ -756,6 +776,40 @@ class HTMLTopExtractor:
         return self._get_checkbox_value_by_id("svapdxB5_1:elgIncSpoImpRlsType:1")
 
     # =========================================================================
+    # APPENDIX B-6: EVALUATION / REEVALUATION OF LEVEL OF CARE
+    # =========================================================================
+
+    @property
+    def local_eval_a(self) -> Optional[int]:
+        """B-6-b: Evaluations performed directly by the Medicaid agency."""
+        return self._get_checkbox_value_by_id("svapdxB6_1:elgEvalRespType:0")
+
+    @property
+    def local_eval_b(self) -> Optional[int]:
+        """B-6-b: Evaluations performed by the operating agency in Appendix A."""
+        return self._get_checkbox_value_by_id("svapdxB6_1:elgEvalRespType:1")
+
+    @property
+    def local_eval_c(self) -> Optional[int]:
+        """B-6-b: Evaluations performed by an entity under contract with the Medicaid agency."""
+        return self._get_checkbox_value_by_id("svapdxB6_1:elgEvalRespType:2")
+
+    @property
+    def local_eval_d(self) -> Optional[int]:
+        """B-6-b: Evaluations performed by an Other entity."""
+        return self._get_checkbox_value_by_id("svapdxB6_1:elgEvalRespType:3")
+
+    @property
+    def local_eval_instrument_same(self) -> Optional[int]:
+        """B-6-e: Same instrument used for waiver and institutional level of care."""
+        return self._get_checkbox_value_by_id("svapdxB6_1:elgEvalLOCInstType:0")
+
+    @property
+    def local_eval_instrument_diff(self) -> Optional[int]:
+        """B-6-e: Different instrument used for waiver vs. institutional level of care."""
+        return self._get_checkbox_value_by_id("svapdxB6_1:elgEvalLOCInstType:1")
+
+    # =========================================================================
     # MAIN EXTRACTION METHOD
     # =========================================================================
 
@@ -810,6 +864,7 @@ class HTMLTopExtractor:
         data["sed_group"] = self.sed_group
 
         # Appendix B-2: Individual Cost Limit
+        data["cost_limit_nolimit"] = self.cost_limit_nolimit
         data["cost_limit_excsinst_costs"] = self.cost_limit_excsinst_costs
         data["cost_limit_pcntaboveinstit"] = self.cost_limit_pcntaboveinstit
         data["cost_limit_instit"] = self.cost_limit_instit
@@ -851,6 +906,18 @@ class HTMLTopExtractor:
         data["spousal_impov_a"] = self.spousal_impov_a
         data["spousal_impov_b"] = self.spousal_impov_b
         data["spousal_impov_c"] = self.spousal_impov_c
+
+        # Appendix B-6: Level-of-Care Evaluation
+        data["local_eval_a"] = self.local_eval_a
+        data["local_eval_b"] = self.local_eval_b
+        data["local_eval_c"] = self.local_eval_c
+        data["local_eval_d"] = self.local_eval_d
+        data["local_eval_instrument_same"] = self.local_eval_instrument_same
+        data["local_eval_instrument_diff"] = self.local_eval_instrument_diff
+
+        # Collapse split radio flags into merged categorical columns
+        # (costlimit, spousal_impov_bc, local_eval, local_eval_instrument).
+        data = collapse_radio_groups(data)
 
         return data
 

@@ -1,0 +1,175 @@
+path,doc_id,category,page_count,acroform_field_count,acroform_set_count,radio_field_count,avg_chars_per_page,has_vector_drawings,error,in_qc_list,targetable_for_visual
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/SD/SD.0264/SD.0264.R03.01.pdf,SD0264R0301,flattened,65,0,0,0,2758.9692307692308,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/SD/SD.0264/SD.0264.R04.00.pdf,SD0264R0400,flattened,134,0,0,0,2253.1641791044776,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/SD/SD.0189/SD0189R0604.pdf,SD0189R0604,flattened,252,0,0,0,2349.7896825396824,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/SD/SD.0189/SD.0189.90.R2.01.pdf,,flattened,101,0,0,0,1802.7920792079208,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/SD/SD.0189/SD.0189.R05.01_Email.pdf,SD0189R0501,flattened,155,0,0,0,2556.0129032258064,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/SC/SC.1686/SC1686R0000.pdf,SC1686R0000,flattened,188,0,0,0,2260.691489361702,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/UT/UT.1666/UT1666R0000.pdf,UT1666R0000,flattened,331,0,0,0,2169.166163141994,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/UT/UT.0439/UT.0439.R01.02.pdf,UT0439R0102,flattened,161,0,0,0,2124.577639751553,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/UT/UT.0439/UT.0439.R01.01.pdf,UT0439R0101,flattened,161,0,0,0,2127.385093167702,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/UT/UT.0439/UT0439R0300.pdf,UT0439R0300,flattened,226,0,0,0,2077.6769911504425,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/UT/UT.0158/UT0158R0700.pdf,UT0158R0700,flattened,300,0,0,0,2382.6633333333334,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/UT/UT.0331/UT.0331.R03.01.pdf,UT0331R0301,flattened,115,0,0,0,2297.573913043478,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/UT/UT.0331/UT.0331.R03.02.pdf,UT0331R0302,flattened,120,0,0,0,2265.9416666666666,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/UT/UT.0331/UT.0331.R03.03.pdf,UT0331R0303,flattened,125,0,0,0,2299.528,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/UT/UT.0331/UT.0331.90.R1.01.pdf,,flattened,143,0,0,0,1878.5734265734266,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/UT/UT.0247/UT0247R0500.pdf,UT0247R0500,flattened,145,0,0,0,2152.786206896552,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/UT/UT.0247/UT0247R0600.pdf,UT0247R0600,flattened,196,0,0,0,2163.6428571428573,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/UT/UT.0247/UT0247R0602.pdf,UT0247R0602,flattened,197,0,0,0,2159.6852791878173,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/UT/UT.0247/UT.0247.R04.01.pdf,UT0247R0401,flattened,146,0,0,0,2191.917808219178,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/UT/UT.1029/UT1029R0100.pdf,UT1029R0100,flattened,180,0,0,0,2247.322222222222,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/MS/MS.0272/MS.0272.R03.00_Emailed.pdf,MS0272R0300,flattened,88,0,0,0,3255.5113636363635,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/MS/MS.0272/MS.0272.R04.03_Emailed.pdf,MS0272R0403,flattened,141,0,0,0,2859.624113475177,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/MS/MS.0272/MS.0272.R04.01_Emailed.pdf,MS0272R0401,flattened,129,0,0,0,2624.6201550387595,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/MS/MS.0255/MS.0255.R03.00_Emailed.pdf,MS0255R0300,flattened,74,0,0,0,3245.891891891892,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/MT/MT.0148/MT0148R0605.pdf,MT0148R0605,flattened,265,0,0,0,1981.7811320754718,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/MO/MO.0698/MO-0698-R01-00-Approval-Letter.pdf,,flattened,2,0,0,0,1006.0,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/MO/MO.1021/MO1021R0200.pdf,MO1021R0200,flattened,142,0,0,0,2377.5915492957747,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/MO/MO.1406/MO1406R0001.pdf,MO1406R0001,flattened,175,0,0,0,2258.285714285714,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/MO/MO.40190/MO40190R0500.pdf,MO40190R0500,flattened,140,0,0,0,2292.8285714285716,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/MO/MO.1706/MO1706R0001.pdf,MO1706R0001,flattened,140,0,0,0,2315.45,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/MO/MO.1706/MO1706R0000.pdf,MO1706R0000,flattened,140,0,0,0,2281.6071428571427,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/MA/MA.1027/MA.1027.R00.03.pdf,MA1027R0003,flattened,259,0,0,0,2618.046332046332,True,,True,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/MA/MA.1027/MA.1027.R00.00.pdf,MA1027R0000,flattened,200,0,0,0,3172.64,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/MA/MA.1027/MA.1027.R00.01.pdf,MA1027R0001,flattened,248,0,0,0,2564.8387096774195,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/MA/MA.1028/MA.1028.R00.01.pdf,MA1028R0001,flattened,123,0,0,0,4515.195121951219,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/MA/MA.1028/MA.1028.R00.00.pdf,MA1028R0000,flattened,229,0,0,0,2652.2489082969432,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/MA/MA.1028/MA.1028.R00.02.pdf,MA1028R0002,flattened,128,0,0,0,4607.9453125,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/MA/MA.1028/MA.1028.R00.03.pdf,MA1028R0003,flattened,232,0,0,0,2685.1293103448274,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/MA/MA.0059/MA.0059.R05.00.pdf,MA0059R0500,flattened,196,0,0,0,1988.969387755102,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/MA/MA.0059/MA.0059.R05.01.pdf,MA0059R0501,flattened,28,0,0,0,1875.142857142857,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/AK/AK.0261/AK.0261.R04.02.pdf,AK0261R0402,flattened,165,0,0,0,2815.6848484848483,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/AK/AK.0261/AK.0261.R04.00.pdf,AK0261R0400,flattened,169,0,0,0,2797.6923076923076,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/KY/KY Waiver Letter-Doc Aug 2014.pdf,,flattened,10,0,0,0,2919.2,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/AL/AL.0068/AL.0068.R07.00.pdf,AL0068R0700,flattened,102,0,0,0,2489.8823529411766,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/AL/AL.0068/AL.0068.91.R4.pdf,,flattened,132,0,0,0,1896.6515151515152,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/AL/AL.0241/AL0241R0600.pdf,AL0241R0600,flattened,217,0,0,0,2233.304147465438,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/AL/AL.0001/AL0001R0900.pdf,AL0001R0900,flattened,302,0,0,0,2270.8741721854303,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/AL/AL.0391/AL0391R0400.pdf,AL0391R0400,flattened,299,0,0,0,2274.3110367892978,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/NH/NH.0060/NH0060R0701.pdf,NH0060R0701,flattened,235,0,0,0,1983.0212765957447,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/NH/NH.0060/NH.0060.R05.01.pdf,NH0060R0501,flattened,123,0,0,0,2791.60162601626,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/NH/NH.0060/NH.0060.R06.01_Emailed.pdf,NH0060R0601,flattened,162,0,0,0,2585.0,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/MN/MN.0166/MN0166R0701.pdf,MN0166R0701,flattened,436,0,0,0,2239.5550458715597,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/MN/MN.0025/MN.0025.R07.01.pdf,MN0025R0701,flattened,261,0,0,0,2793.0842911877394,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/MN/MN.0025/MN.0025.R07.00.pdf,MN0025R0700,flattened,254,0,0,0,2846.996062992126,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/MN/MN.0025/MN.0025.R07.02.pdf,MN0025R0702,flattened,175,0,0,0,4210.4971428571425,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/MN/MN.0025/MN0025R0803.pdf,MN0025R0803,flattened,336,0,0,0,2295.7261904761904,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/MN/MN.0025/MN0025R0811.pdf,MN0025R0811,flattened,335,0,0,0,2301.6716417910447,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/MI/MI.0233/MI0233R0503.pdf,MI0233R0503,flattened,260,0,0,0,2333.1769230769232,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/MI/MI.0233/MI.0233.90.R1.03.pdf,,flattened,180,0,0,0,3354.3944444444446,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/OK/EmailWithTimeline.pdf,,flattened,1,0,0,0,1629.0,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/OK/EmailWithWaiverMergeInfo.pdf,,flattened,2,0,0,0,878.0,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/OK/OK.0256/OK.0256.R04.04_May2015 .pdf,OK0256R0404,flattened,18,0,0,0,2765.1111111111113,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/OK/OK.0256/OK.0256.R05.00.pdf,OK0256R0500,flattened,210,0,0,0,2952.785714285714,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/OK/OK.0256/OK.0256.R04.04_March2015.pdf,OK0256R0404,flattened,223,0,0,0,2732.4215246636772,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/OK/OK.0256/OK.0256.R05.00_FromOKCaid.pdf,OK0256R0500,flattened,201,0,0,0,2975.094527363184,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/OK/OK.0256/OK0256R0505.pdf,OK0256R0505,flattened,268,0,0,0,2250.6082089552237,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/OK/OK.0809/OK.0809.R00.01.pdf,OK0809R0001,flattened,210,0,0,0,2688.885714285714,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/IN/IN.0387/IN0387R0402.pdf,IN0387R0402,flattened,340,0,0,0,2315.141176470588,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/IN/IN.0378/IN0378R0402.pdf,IN0378R0402,flattened,376,0,0,0,2308.523936170213,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/CO/CO.0006/CO.0006.R06.02.pdf,CO0006R0602,flattened,188,0,0,0,2661.1702127659573,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/CO/CO.0006/CO.0006.R06.00.pdf,CO0006R0600,flattened,189,0,0,0,2640.5185185185187,True,,True,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/CO/CO.0961/CO0961R0201.pdf,CO0961R0201,flattened,306,0,0,0,2210.251633986928,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/CO/CO.0961/CO0961R0200.pdf,CO0961R0200,flattened,296,0,0,0,2179.5033783783783,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/CO/CO.0961/CO0961R0202.pdf,CO0961R0202,flattened,304,0,0,0,2203.6973684210525,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/CA/CA.0141/CA.0141.R04.00_Email.pdf,CA0141R0400,flattened,141,0,0,0,2531.432624113475,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/CA/CA.0486/CA0486R0200.pdf,CA0486R0200,flattened,164,0,0,0,2119.481707317073,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/IA/IA.0299/IA0299R0501.pdf,IA0299R0501,flattened,392,0,0,0,2542.9591836734694,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/CT/CT.0140/CT.0140.R05.00.pdf,CT0140R0500,flattened,114,0,0,0,2394.9122807017543,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/CT/CT.0301/CT0301R0501.pdf,CT0301R0501,flattened,173,0,0,0,2086.543352601156,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/FL/Aged and Disabled Adult Waiver Services Coverage and Limitations Handboo....pdf,,flattened,120,0,0,0,1829.2333333333333,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/FL/FL Summary of Changes Feb 21 2012.pdf,,flattened,69,0,0,0,3057.2753623188405,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/FL/Assisted Living Waiver Services Coverage and Limitations Handbook.pdf,,flattened,99,0,0,0,1519.979797979798,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/FL/FL.0962/FL.0962.R00.01.pdf,FL0962R0001,flattened,207,0,0,0,2442.454106280193,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/FL/FL.40166/FL40166R0600.pdf,FL40166R0600,flattened,118,0,0,0,2274.0677966101694,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/WV/Eff_12012015.pdf,,flattened,66,0,0,0,3673.9545454545455,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/WV/WV.0133/WV0133R0700.pdf,WV0133R0700,flattened,258,0,0,0,2301.8875968992247,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/WV/WV.0134/WV0134R0703.pdf,WV0134R0703,flattened,179,0,0,0,2120.240223463687,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/WV/WV.0134/WV0134R0700.pdf,WV0134R0700,flattened,178,0,0,0,2118.7921348314608,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/WV/WV0876R02/WV0876R0200.pdf,WV0876R0200,flattened,184,0,0,0,2270.4021739130435,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/WY/WY.0236/WY0236R0502.pdf,WY0236R0502,flattened,183,0,0,0,2239.2950819672133,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/TX/TX.0266/0266.R03.02 Effective 9-1-2009/CBA 0266 waiver.pdf,,flattened,149,0,0,0,3389.241610738255,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/TX/TX.0266/0266.R04.02 Effective 7-8-2014/20140714 TX0266.R04.02 Approved Waiver Application.pdf,TX0266R0402,flattened,229,0,0,0,2687.1397379912664,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/TX/TX.0266/0266.R03.07 Effective 3-1-2012/20120319 HHSCSubmission.pdf,,flattened,149,0,0,0,3294.020134228188,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/TX/TX.0266/0266.R04.00 Effective 9-1-2012/20120522 HHSCSubmittal.pdf,,flattened,210,0,0,0,2829.1285714285714,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/TX/TX.0266/0266.R03.06 Effective 1-1-2012/20111205 HHSCSubmittal.pdf,,flattened,149,0,0,0,3278.7046979865772,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/TX/TX.0266/0266.R04.01 Effective 9-1-2012/20130301 0266.R04.01 Waiver App Submittal.pdf,,flattened,217,0,0,0,2767.672811059908,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/TX/TX.0266/0266.R03.04 Effective 9-1-2010/20110628 HHSC Submission.pdf,,flattened,149,0,0,0,3309.2080536912754,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/TX/TX.0266/0266.R03.05 Effective 12-1-2011/20110901 HHSC submission.pdf,,flattened,149,0,0,0,3324.6040268456377,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/TX/TX.0266/0266.R03.03 Effective 9-1-2009/Pages from 20100819 HHSC Submission.pdf,,flattened,149,0,0,0,3326.087248322148,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/TX/TX.0266/0266.R04.03 CBA Transition/CBA Amd 3 final.pdf,,flattened,234,0,0,0,2774.08547008547,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/TX/TX.0266/0266.R04.03 CBA Transition/20140110 CBA Transition Plan.pdf,,flattened,11,0,0,0,2539.5454545454545,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/PA/PA.0279/PA.0279.R04.10.pdf,PA0279R0410,flattened,233,0,0,0,3630.1630901287554,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/PA/PA.0279/PA.0279.R04.02.pdf,PA0279R0402,flattened,156,0,0,0,3158.5384615384614,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/PA/PA.0279/PA.0279.R03.09.pdf,PA0279R0309,flattened,221,0,0,0,2492.981900452489,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/PA/PA.0279/PA.0279.R04.00.pdf,PA0279R0400,flattened,45,0,0,0,3885.5333333333333,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/PA/PA.0386/PA.0386.R02.07.pdf,PA0386R0207,flattened,195,0,0,0,2647.9282051282053,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/NC/NC.11-055/NC-11-055-179.pdf,,flattened,1,0,0,0,1898.0,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/NC/NC.0132/NC0132R0701.pdf,NC0132R0701,flattened,307,0,0,0,2341.71986970684,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/ND/ND.0273/ND0273R0506.pdf,ND0273R0506,flattened,217,0,0,0,2405.84331797235,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/ME/ME.0995/ME-0995-R00-00-Approval-Letter.pdf,,flattened,2,0,0,0,1836.5,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/ME/ME.0995/ME-0995-R00-01-Approval-Letter.pdf,,flattened,2,0,0,0,1486.5,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/ME/ME.0159/ME0159R0700.pdf,ME0159R0700,flattened,280,0,0,0,2380.0714285714284,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/ME/ME.0159/ME0159R0701.pdf,ME0159R0701,flattened,264,0,0,0,2301.2651515151515,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/AR/AR Waiver Merger July 2014.pdf,,flattened,153,0,0,0,2815.843137254902,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/AR/AR.0400/AR.0400.R02.02_AppendixJ.pdf,AR0400R0202,flattened,5,0,0,0,1864.8,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/NV/NV.0152/MSM_2200_12_09_12.pdf,,flattened,47,0,0,0,2100.468085106383,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/NV/NV.0152/NV0152R0700.pdf,NV0152R0700,flattened,178,0,0,0,2310.005617977528,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/NV/NV.0152/NV0152R0701.pdf,NV0152R0701,flattened,182,0,0,0,2333.2252747252746,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/NV/NV.0152/NV0152/NV0152R0700.pdf,NV0152R0700,flattened,178,0,0,0,2310.005617977528,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/NV/NV.4150/NV4150R0605.pdf,NV4150R0605,flattened,195,0,0,0,2390.0307692307692,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/DC/DC.0334/DC0334R0402.pdf,DC0334R0402,flattened,226,0,0,0,2614.973451327434,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/DC/DC.0334/DC.0334.90.R1.02.pdf,,flattened,212,0,0,0,2216.3915094339623,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/MD/MD.0265/MD.0265.R04.03_Emailed.pdf,MD0265R0403,flattened,84,0,0,0,4380.785714285715,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/MD/MD.0265/MD.0265.R04.00_Emailed.pdf,MD0265R0400,flattened,86,0,0,0,4369.732558139535,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/MD/MD.0265/MD.0265.R04.02_Emailed.pdf,MD0265R0402,flattened,91,0,0,0,4324.956043956044,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/MD/MD.0265/MD.0265.R04.00_Amended_Emailed.pdf,MD0265R0400,flattened,84,0,0,0,4241.714285714285,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/MD/MD.0265/MD.0265.R04.01_Emailed.pdf,MD0265R0401,flattened,90,0,0,0,4372.333333333333,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/MD/MD.0265/MD.0265.R04.04_Emailed.pdf,MD0265R0404,flattened,91,0,0,0,4326.472527472528,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/NE/NE.0454/NE_0454_R01_02_Approval_Letter.pdf,,flattened,2,0,0,0,1161.5,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/NE/NE.0454/NE_0454_R01_01_Approval_Letter.pdf,,flattened,2,0,0,0,1222.5,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/NE/NE.0454/NE_0454_R01_00_Approval_Letter.pdf,,flattened,2,0,0,0,1312.0,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/DE/DE.0136/DE.0136.R04.00.pdf,DE0136R0400,flattened,139,0,0,0,2666.431654676259,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/NY/NY.0238/NY0238R0603.pdf,NY0238R0603,flattened,310,0,0,0,2639.9,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/NY/NY.0444/NY0444R0203.pdf,NY0444R0203,flattened,269,0,0,0,2462.4052044609666,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/ID/ID.0076/ID0076R0603.pdf,ID0076R0603,flattened,227,0,0,0,2319.374449339207,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/ID/ID.1076/ID0076R0603.pdf,ID0076R0603,flattened,227,0,0,0,2319.374449339207,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/ID/ID.1076/ID.1076.R04.04.pdf,ID1076R0404,flattened,197,0,0,0,2622.1472081218276,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/ID/ID.1076/ID.1076.R05.02.pdf,ID1076R0502,flattened,167,0,0,0,3560.3473053892217,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/ID/ID.1076/ID.1076.R05.01.pdf,ID1076R0501,flattened,192,0,0,0,2832.890625,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/ID/ID.1076/ID.1076.R05.00.pdf,ID1076R0500,flattened,178,0,0,0,3149.449438202247,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/OH/OH.0877/OH0877R0200.pdf,OH0877R0200,flattened,259,0,0,0,2314.988416988417,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/OH/OH.0877/OH0877R02/OH0877R0200.pdf,OH0877R0200,flattened,259,0,0,0,2314.988416988417,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/IL/IL.0326/IL.0326.R02.00.pdf,IL0326R0200,flattened,74,0,0,0,3482.0945945945946,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/IL/IL.0326/IL.0326.R03.00_EffJuly2012.pdf,IL0326R0300,flattened,176,0,0,0,2753.153409090909,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/IL/IL.0326/IL.0326.R03.00_EffDec2012.pdf,IL0326R0300,flattened,121,0,0,0,2120.1735537190084,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/LA/LA.0121/LA.0121.R05.04.pdf,LA0121R0504,flattened,86,0,0,0,3807.4883720930234,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/LA/LA.0121/LA.0121.R05.03.pdf,LA0121R0503,flattened,86,0,0,0,3792.860465116279,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/LA/LA.0121/LA.0121.R05.02.pdf,LA0121R0502,flattened,72,0,0,0,3963.8888888888887,True,,True,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/LA/LA.0866/LA.0866.R00.06.pdf,LA0866R0006,flattened,168,0,0,0,3093.3869047619046,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/LA/LA.0866/LA.0866.R00.05.pdf,LA0866R0005,flattened,165,0,0,0,3103.4666666666667,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/LA/LA.0866/LA.0866.R00.04.pdf,LA0866R0004,flattened,164,0,0,0,3105.1341463414633,True,,True,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/WI/WI.0367/WI0367R0300.pdf,WI0367R0300,flattened,164,0,0,0,2088.0731707317073,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/WI/WI.0367/WI0367R0400.pdf,WI0367R0400,flattened,278,0,0,0,2406.0035971223024,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/WI/WI.0484/WI.0484.R01.05.pdf,WI0484R0105,flattened,226,0,0,0,3447.119469026549,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/WI/WI.0484/WI0484R0100.pdf,WI0484R0100,flattened,226,0,0,0,3447.119469026549,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/WA/WA.0008/WA-0008.pdf,,flattened,76,0,0,0,2073.1710526315787,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/WA/WA.0049/WA.0049.R06.05.pdf,WA0049R0605,flattened,11,0,0,0,2891.0,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/WA/WA.0049/WA.0049.R06.04.pdf,WA0049R0604,flattened,12,0,0,0,2936.3333333333335,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/WA/WA.0049/WA.0049.R06.06.pdf,WA0049R0606,flattened,12,0,0,0,2929.5,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/WA/WA.0049/WA.0049.R06.07.pdf,WA0049R0607,flattened,12,0,0,0,2858.75,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/WA/WA.0049/WA.0049.R06.03.pdf,WA0049R0603,flattened,11,0,0,0,2900.5454545454545,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/WA/WA.0049/WA.0049.R06.02.pdf,WA0049R0602,flattened,11,0,0,0,3046.6363636363635,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/WA/WA.0049/WA.0049.R06.00.pdf,WA0049R0600,flattened,11,0,0,0,2987.4545454545455,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/WA/WA.0049/WA.0049.R06.01.pdf,WA0049R0601,flattened,194,0,0,0,2538.283505154639,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/WA/WA.0049/WA0049R0801.pdf,WA0049R0801,flattened,201,0,0,0,2124.547263681592,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/WA/WA.0049/WA.0049.R06.08.pdf,WA0049R0608,flattened,11,0,0,0,2895.181818181818,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/WA/WA.0443/WA.0443.R01.03.pdf,WA0443R0103,flattened,11,0,0,0,2989.4545454545455,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/WA/WA.0443/WA.0443.R01.05.pdf,WA0443R0105,flattened,11,0,0,0,3110.090909090909,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/WA/WA.0443/WA.0443.R01.04.pdf,WA0443R0104,flattened,11,0,0,0,2901.181818181818,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/WA/WA.0443/WA.0443.R01.06.pdf,WA0443R0106,flattened,11,0,0,0,3101.4545454545455,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/WA/WA.0443/WA0443R0301.pdf,WA0443R0301,flattened,195,0,0,0,2324.6153846153848,True,,False,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/WA/WA.0443/WA0443R0200.pdf,WA0443R0200,flattened,155,0,0,0,2848.0967741935483,True,,True,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/WA/WA.0443/WA.0443.R02.00.pdf,WA0443R0200,flattened,134,0,0,0,2003.7611940298507,True,,True,True
+/Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/WA/WA.1086/WA1086R0101.pdf,WA1086R0101,flattened,215,0,0,0,2202.5302325581397,True,,False,True

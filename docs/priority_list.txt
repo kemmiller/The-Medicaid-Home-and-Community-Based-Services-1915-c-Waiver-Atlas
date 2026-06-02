@@ -1,0 +1,464 @@
+TOP PRIORITIES
+
+======================================================================
+Request information (1 of 3)
+======================================================================
+  program_title                        1200/1277 ( 82.9%) █████████████████████████████████████████░░░░░░░░░
+  replacedwaiver                          0/1277 (  0.0%) ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+  effective_date                       1053/1277 ( 82.5%) █████████████████████████████████████████░░░░░░░░░
+  waiver_type                          1001/1277 ( 78.4%) ███████████████████████████████████████░░░░░░░░░░░
+  approval_period  x
+
+======================================================================
+Request information (2 of 3)
+======================================================================
+  hospital_loc                          744/1277 ( 58.3%) █████████████████████████████░░░░░░░░░░░░░░░░░░░░░
+  hospital_loc_limits                   137/1277 ( 10.7%) █████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+  nursing_facility_loc                  744/1277 ( 58.3%) █████████████████████████████░░░░░░░░░░░░░░░░░░░░░
+  nursing_facility_loc_limits           330/1277 ( 25.8%) ████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+  ifc_loc                               729/1277 ( 57.1%) ████████████████████████████░░░░░░░░░░░░░░░░░░░░░░
+  ifc_loc_limits                        101/1277 (  7.9%) ███░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+
+======================================================================
+Request information (3 of 3)
+======================================================================
+  concurrent_1915a                      733/1277 ( 57.4%) ████████████████████████████░░░░░░░░░░░░░░░░░░░░░░
+  concurrent_1915b                      740/1277 ( 57.9%) ████████████████████████████░░░░░░░░░░░░░░░░░░░░░░
+  concurrent_1932a                      728/1277 ( 57.0%) ████████████████████████████░░░░░░░░░░░░░░░░░░░░░░
+  concurrent_1915i                      735/1277 ( 57.6%) ████████████████████████████░░░░░░░░░░░░░░░░░░░░░░
+  concurrent_1915j                      733/1277 ( 57.4%) ████████████████████████████░░░░░░░░░░░░░░░░░░░░░░
+  concurrent_1115                       740/1277 ( 57.9%) ████████████████████████████░░░░░░░░░░░░░░░░░░░░░░
+  dual_elg                              722/1277 ( 56.5%) ████████████████████████████░░░░░░░░░░░░░░░░░░░░░░
+
+======================================================================
+4. Waiver(s) Requested
+======================================================================
+    waive_1902a - MISSING [yes no scenario] x
+    waive_statewideness - MISSING [yes no scenario] - multi case how to map back in the algorithm x
+    waive_geographic_limits - MISSING [Off On Scenario] TODO
+    waive_geographic_LIPD - MISSING [Off On Scenario] TODO
+
+======================================================================
+Appendix B: Participant Access and Eligibility B-1
+======================================================================
+  aged_group                              0/1277 (  0.0%) ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+  aged_group_min_age                      0/1277 (  0.0%) ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+  aged_group_max_age                      0/1277 (  0.0%) ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+  physicaldis_group                     620/1277 ( 48.6%) ████████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░
+  otherdis_group                        620/1277 ( 48.6%) ████████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░
+  braininjury_group                     620/1277 ( 48.6%) ████████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░
+  hivaids_group                         620/1277 ( 48.6%) ████████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░
+  medicallyfrail_group                  620/1277 ( 48.6%) ████████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░
+  techdep_group                         620/1277 ( 48.6%) ████████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░
+  autism_group                          620/1277 ( 48.6%) ████████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░
+  dd_group                              620/1277 ( 48.6%) ████████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░
+  id_group                              620/1277 ( 48.6%) ████████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░
+  mi_group                              620/1277 ( 48.6%) ████████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░
+  sed_group                             620/1277 ( 48.6%) ████████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░
+
+
+======================================================================
+Appendix B: Participant Access and Eligibility B-2
+======================================================================
+    costlimit_excsinstocosts - MISSING x (4 variables are mapped) x
+    costlimit_pcntaboveinstit - MISSING [Off On Scenario] text box TODO 
+    costlimit_instit - MISSING x mapped to costlimit_excsinstocosts x
+    costlimit_lowerinstit - MISSING x mapped to costlimit_excsinstocosts x 
+
+======================================================================
+Appendix B: Participant Access and Eligibility B-3: Number of Individuals Served (1 of 4) 
+======================================================================
+    numberbenes_limited - MISSING x
+
+======================================================================
+Appendix B: Participant Access and Eligibility B-3: Number of Individuals Served (2 of 4)
+======================================================================
+    max_numberbenes_year1 - MISSING TODO - done
+    max_numberbenes_year2 - MISSING TODO
+    max_numberbenes_year3 - MISSING TODO
+    max_numberbenes_year4 - MISSING TODO
+    max_numberbenes_year5 - MISSING TODO
+
+======================================================================
+Appendix B: Participant Access and Eligibility B-3: Number of Individuals Served (3 of 4)
+======================================================================
+    phaseinoutschedule - MISSING x 
+    entrantselection - MISSING TODO
+
+======================================================================
+Appendix B: Participant Access and Eligibility B-4
+======================================================================
+    eligibilty_1 - MISSING  TODO 
+    eligibilty_2 - MISSING TODO
+    eligibilty_3 - MISSING TODO
+    eligibilty_4 - MISSING TODO
+    eligibility_5_percent - MISSING TODO radio [vignesh]
+    eligibilty_5_100 - MISSING TODO
+    eligibilty_6 - MISSING TODO
+    eligibilty_7 - MISSING TODO
+    eligibilty_8 - MISSING TODO
+    eligibilty_9 - MISSING TODO
+    eligibilty_10 - MISSING TODO
+    eligibilty_11 - MISSING TODO
+    eligibilty_12 - MISSING TODO
+    specialHCBS - MISSING x 
+
+======================================================================
+Appendix B: Participant Access and Eligibility B-5
+======================================================================
+spousal_improv_a - MISSING square form - done
+spousal_improv_b - MISSING x
+spousal_improv_c - MISSING - mapped with improv_b
+
+======================================================================
+Appendix C: Participant Services C-1/C-3: Service Specification
+======================================================================
+
+
+ 
+SECONDARY 
+Appendix B: Participant Access and Eligibility B-6
+Appendix E: Participant Direction of Services E-1 (all of them)
+Appendix E: Participant Direction of Services E-2
+Appendix I: Financial Accountability I-2: Rates, Billing and Claims (1 of 3)
+Appendix I: Financial Accountability I-2: Financial Accountability (3 of 7)
+
+TERTIARY
+Brief waiver description
+Attachments (transition plans)
+Appendix A: Waiver Administration and Operation
+Appendix I: Financial Accountability I-3: Payment (7 of 7)
+Appendix I: Financial Accountability I-5
+Appendix I: Financial Accountability I-6
+
+DO NOT NEED
+3. Components of the Waiver Request
+
+
+
+open issues that I have spotted: 
+1. for sd_election: there are three options: 
+
+Appendix E: Participant Direction of Services
+E-1: Overview (3 of 13)
+d. Election of Participant Direction. Election of participant direction is subject to the following policy (select one):
+Waiver is designed to support only individuals who want to direct their services.
+The waiver is designed to afford every participant (or the participant's representative) the opportunity to
+elect to direct waiver services. Alternate service delivery methods are available for participants who
+decide not to direct their services.
+The waiver is designed to offer participants (or their representatives) the opportunity to direct some or
+all of their services, subject to the following criteria specified by the state. Alternate service delivery
+methods are available for participants who decide not to direct their services or do not meet the criteria.
+
+and also sd_delection3 does not exist. 
+
+2. for  these three options: 
+sd_employerauth
+sd_budgetauth
+sd_bothauth
+the below is the answer, we should select one. 
+
+Appendix E: Participant Direction of Services
+E-1: Overview (2 of 13)
+b. Participant Direction Opportunities. Specify the participant direction opportunities that are available in the waiver.
+Select one:
+Participant: Employer Authority. As specified in Appendix E-2, Item a, the participant (or the participant's
+representative) has decision-making authority over workers who provide waiver services. The participant may
+function as the common law employer or the co-employer of workers. Supports and protections are available for
+participants who exercise this authority.
+Participant: Budget Authority. As specified in Appendix E-2, Item b, the participant (or the participant's
+representative) has decision-making authority over a budget for waiver services. Supports and protections are
+available for participants who have authority over a budget.
+Both Authorities. The waiver provides for both participant direction opportunities as specified in Appendix E-2.
+Supports and protections are available for participants who exercise these authorities.
+
+
+3. Code base naming conventions are accurate. lets stick to that in the dictionary too. 
+
+4. Costlimit variable is like below: 
+Appendix B: Participant Access and Eligibility
+B-2: Individual Cost Limit (1 of 2)
+a. Individual Cost Limit. The following individual cost limit applies when determining whether to deny home and
+community-based services or entrance to the waiver to an otherwise eligible individual (select one). Please note that a state
+may have only ONE individual cost limit for the purposes of determining eligibility for the waiver:
+[option 1] No Cost Limit. The state does not apply an individual cost limit. Do not complete Item B-2-b or item B-2-c.
+[option 2] Cost Limit in Excess of Institutional Costs. The state refuses entrance to the waiver to any otherwise eligible
+individual when the state reasonably expects that the cost of the home and community-based services furnished to
+that individual would exceed the cost of a level of care specified for the waiver up to an amount specified by the state.
+Complete Items B-2-b and B-2-c.
+The limit specified by the state is (select one)
+A level higher than 100% of the institutional average.
+Specify the percentage:
+Other
+Specify:
+[option 3] Institutional Cost Limit. Pursuant to 42 CFR 441.301(a)(3), the state refuses entrance to the waiver to any otherwise
+eligible individual when the state reasonably expects that the cost of the home and community-based services
+furnished to that individual would exceed 100% of the cost of the level of care specified for the waiver. Complete
+Items B-2-b and B-2-c.
+[[option 4] ]Cost Limit Lower Than Institutional Costs. The state refuses entrance to the waiver to any otherwise qualified
+individual when the state reasonably expects that the cost of home and community-based services furnished to that
+individual would exceed the following amount specified by the state that is less than the cost of a level of care
+specified for the waiver.
+Specify the basis of the limit, including evidence that the limit is sufficient to assure the health and welfare of waiver
+participants. Complete Items B-2-b and B-2-c.
+
+
+5. local_eval is like the below: 
+Appendix B: Participant Access and Eligibility
+B-6: Evaluation/Reevaluation of Level of Care
+As specified in 42 CFR §441.302(c), the state provides for an evaluation (and periodic reevaluations) of the need for the level(s)
+of care specified for this waiver, when there is a reasonable indication that an individual may need such services in the near
+future (one month or less), but for the availability of home and community-based waiver services.
+a. Reasonable Indication of Need for Services. In order for an individual to be determined to need waiver services, an
+individual must require: (a) the provision of at least one waiver service, as documented in the service plan, and (b) the
+provision of waiver services at least monthly or, if the need for services is less than monthly, the participant requires
+regular monthly monitoring which must be documented in the service plan. Specify the state's policies concerning the
+reasonable indication of the need for services:
+i. Minimum number of services.
+The minimum number of waiver services (one or more) that an individual must require in order to be determined to
+need waiver services is:
+ii. Frequency of services. The state requires (select one):
+The provision of waiver services at least monthly
+Monthly monitoring of the individual when services are furnished on a less than monthly basis
+If the state also requires a minimum frequency for the provision of waiver services other than monthly (e.g.,
+quarterly), specify the frequency:
+b. Responsibility for Performing Evaluations and Reevaluations. Level of care evaluations and reevaluations are
+performed (select one):
+[option 1] Directly by the Medicaid agency
+[option 2] By the operating agency specified in Appendix A
+[option 3] By a government agency under contract with the Medicaid agency.
+Specify the entity:
+[option 4] Other
+Specify:
+
+
+make fixes in the code base as well while trying this out on a succesfull sample document
+
+
+======================================================================
+RADIO-BUTTON COLLAPSE (2026-05-20)
+======================================================================
+
+DONE
+----
+- extractors/_radio_collapse.py: shared collapse module mapping the split
+  flags to merged radio columns (costlimit, spousal_impov_bc, local_eval,
+  local_eval_instrument, sd_election, sd_authority). Single source of
+  truth for option labels.
+- extractors/pdf_acroform_extractor: added TARGET_VARIABLES entries for
+  sd_authority (svapdxE1_2:dosPtcOppType), sd_election
+  (svapdxE1_3:dosElctn), local_eval (svapdxB6_1:elgEvalRespType), and
+  local_eval_instrument (svapdxB6_1:elgEvalLOCInstType).
+- extractors/html_extractor/html_top_extractor.py:
+    * new property cost_limit_nolimit (svapdxB2_1:elgIclType:0)
+    * new B-6 properties local_eval_a/b/c/d
+      (svapdxB6_1:elgEvalRespType:0..3) and local_eval_instrument_same /
+      _diff (svapdxB6_1:elgEvalLOCInstType:0/1)
+    * extract_all() now calls collapse_radio_groups so split flags are
+      dropped from output and merged columns are emitted.
+- extractors/secondary_extractor/html_appendix_e_extractor.py:
+    process_single_file collapses sd_employerauth/budgetauth/bothauth ->
+    sd_authority and sd_election_1/2/3 -> sd_election after the TXT
+    fallback, so the split flags no longer appear in the final output.
+- extractors/text_extractor/text_top_extractor.py: cost_limit_nolimit
+  property added; extract_all calls collapse_radio_groups.
+- docs/1915C_Data_Dictionary_Updated.xlsx rebuilt to match codebase
+  naming: spousal_improv_* -> spousal_impov_*, loc_eval_insturment ->
+  local_eval_instrument, sd_delection3 dropped, sd_employerauth/budget/
+  bothauth merged into sd_authority, all merged variables now have
+  4-option costlimit / 4-option local_eval / 5-option statecontracts_mcos
+  values strings.
+- Smoke test: PDF acroform extractor on
+  /Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/
+  AK/AK.0260/AK0260R0600.PDF returned the new costlimit ("No Cost
+  Limit..."), local_eval ("Directly by the Medicaid agency"), and
+  local_eval_instrument values; sd_authority/sd_election came back None
+  because AK0260R0600 has no Appendix E (selfdirection_yes = "No.").
+  Second run on VA/VA.0321/VA0321R0402.PDF confirmed sd_authority
+  ("Participant: Employer Authority...") and sd_election ("opportunity
+  to direct some or all of their services, subject to ... criteria
+  specified by the State").
+
+REMAINING TODOs
+---------------
+1. HTML/text extractor: B-6 text-pattern extraction for local_eval_a/b/
+   c/d and local_eval_instrument_same/_diff in text_top_extractor.py.
+   Currently the text extractor cannot populate these (returns None
+   through collapse), only the PDF acroform and HTML form paths do.
+2. Audit naming divergence between extractors. The HTML/text extractors
+   still emit phase_in_out_schedule, special_hcbs (underscored) while
+   the PDF acroform extractor emits phaseinoutschedule, specialHCBS
+   (concat). Pick one canonical name per variable and apply across all
+   extractors; the dictionary follows the PDF acroform convention.
+3. Re-run the full pipeline so 1915c-waiver-level.csv picks up the new
+   merged columns (costlimit, local_eval, local_eval_instrument,
+   sd_authority) and drops the split flags. The current CSV in
+   /Users/vigneshrbabu/Downloads/1915c_Waiver_Extracted_v2 still has
+   the pre-collapse split column names; once regenerated, the dict's
+   "In Dataset?" coverage for these radios should jump back up.
+4. Service-level extractor parity: confirm whether any merged radios
+   from this set apply to the service-level dataset.
+
+
+PROMPTING STRATEGIES
+--------------------
+
+ROLE
+You are working on the visual radio-button fallback inside extractors/pdf_acroform_extractor/pdf_acroform_extractor.py for the MedicaidWaiverExtraction project. The current implementation (described in detail below) achieves ~78–79% fill rate on flattened PDFs because it was calibrated on a single document (CO0006R0600) and breaks on rendering, layout, and template variation. Your job is to rebuild the visual detector into a per-variable, geometry-first extractor that generalizes across the 27 QC documents listed below, starting from CO0006R0600 and expanding outward one document at a time.
+
+This is a strictly iterative task. Do NOT attempt corpus-wide changes. Do NOT touch the AcroForm primary path (Tier 1) — it works and is authoritative. You are only modifying _detect_visual_radio_selection and its helpers, plus the per-variable probe configuration in _VISUAL_RADIO_PROBES.
+
+WORKING ENVIRONMENT
+- Repo root: ~/Documents/HealthPolicyManagement/MedicaidWaiverExtraction/
+- Waiver corpus root: /Users/vigneshrbabu/Documents/HealthPolicyManagement/1915(c) waivers/
+- Files you may edit:
+    extractors/pdf_acroform_extractor/pdf_acroform_extractor.py
+    extractors/pdf_acroform_extractor/tests/test_visual_fallback.py (extend, don't rewrite)
+- Files you may add (new, under pdf_acroform_extractor/):
+    visual_radio/geometry.py        — pure geometric primitives, no I/O
+    visual_radio/probes.py          — per-variable probe definitions
+    visual_radio/diagnostics.py     — render-to-PNG debug overlay for one (doc, variable) pair
+- Python: 3.12. Libraries already available: pypdf, pymupdf (fitz), pdfplumber. Do NOT add new dependencies without asking.
+
+TARGET VARIABLE FOR THIS SESSION
+enhanced_payments_yes
+
+(We will run separate sessions for payforresidential, reimburse_paidcg, statecontracts_mcos, and any additional radio variables. Do not work on more than one variable per session. State this back to me before writing code so I can confirm.)
+
+TARGET DOCUMENT FOR THIS SESSION
+CO0006R0600 only.
+
+We will expand to the full QC set ONLY after CO0006R0600 passes cleanly and a regression run on AK0260R0600 (AcroForm path, must not break) still passes. The full QC set, in iteration order, is:
+
+  CO0006R0600  ← start here
+  LA0866R0004
+  NV0152R0601
+  LA0121R0502
+  MA1027R0003     (known: ambiguous inner-fill — every option registers ≥2 fills)
+  MI023390R103    (known: zero radios in current x-window — layout/margin variant)
+  WA0443R0200     (known: anchor strings don't match template)
+  AR0188R0601
+  CA0141R0608
+  CO0211R0302
+  CO0961R0222
+  CT1040R0000
+  DE4159R0400
+  FL0418R0101
+  GA0112R0702
+  IA0213R0603
+  ID1076R0401
+  IL0143R0705
+  KS4164R0700
+  MD0353R0200
+  ME0127R0501
+  MN0025R0901
+  MN4169R0608
+  MS0255R0400
+  MT0148R0602
+  NC0132R0700
+  PA0386R0300
+
+KNOWN FAILURE MODES YOU MUST EXPLICITLY SOLVE (not paper over)
+Read these carefully — each corresponds to a structural weakness in the current code that I want fixed at the design level, not patched.
+
+1. Fixed x-window per variable. The current code uses hardcoded x_max values calibrated from one document. This breaks the moment a PDF has different page margins, a wider layout, or places the radio column elsewhere (MI023390R103). The new design must DISCOVER the radio column position dynamically per page by clustering small filled circular drawings, then anchor labels relative to that cluster — not relative to absolute page coordinates.
+
+2. ≥2 fills = selected. Calibrated on one rendering style. MA1027R0003 breaks it because every option's outer ring is rendered as multiple stacked filled paths. The new design must compare each option's drawing signature to the OTHER options on the same page — the selected radio is the one that is geometrically distinct from its siblings, not the one that crosses an absolute threshold. Think relative, not absolute.
+
+3. Template-specific anchor substrings. WA0443R0200 uses different wording. The probe configuration must support a list of acceptable anchor variants per option (with normalized whitespace and case-folded matching) and a confidence score for each match, so a partial template match doesn't silently return None.
+
+4. MIN_LOCATED_ANCHORS=2 hard gate. Too blunt. Replace with a confidence model: if 1 anchor is found AND that anchor's geometric signature matches a known "selected" pattern (relative to siblings on the page or to a learned baseline), accept it with a confidence flag in the result.
+
+5. ±6 pt vertical tolerance. Breaks on wrapped option labels. Use the FULL text-block bbox from PyMuPDF's get_text("dict") (block level, not line level) for the anchor's vertical range, with a small padding.
+
+6. No image/raster path. If the PDF embeds radios as bitmap glyphs rather than vector paths, the current code is blind. Add a third tier: when zero filled drawings are found near a successfully located anchor, fall through to a PyMuPDF page.get_pixmap() crop of the anchor's left margin region and run a lightweight raster check (filled-pixel ratio inside a small circular ROI vs. the same ROI on sibling options). Use Pillow only — do NOT add OpenCV or numpy-heavy CV dependencies.
+
+DESIGN PRINCIPLES (non-negotiable)
+- Per-variable customization is acceptable AND expected. Different variables (3-year vs 5-year approval, residential payment, MCO contracts) render their radios in different positions with different contrast. Encode this in the per-variable probe config, NOT by branching deep in the detection function. The detector should be variable-agnostic; the PROBE carries the variable-specific knowledge.
+- Relative geometry beats absolute coordinates. Always compare options to each other on the same page before consulting any absolute threshold.
+- Loud failure beats silent wrong answer. When confidence is below threshold, return a structured result with status="ambiguous" and the per-option diagnostic data, never a guessed label. The pipeline already tolerates None — we want richer None.
+- Every detector decision must be inspectable. The diagnostics module must produce a PNG overlay for any (doc_id, variable) pair showing: anchor bboxes (green), discovered radio column (blue vertical strip), each candidate radio's bbox and fill-signature score (numbered), and which option was selected (red box).
+
+DELIVERABLE FOR THIS SESSION
+A working detector for enhanced_payments_yes on CO0006R0600 that:
+  (a) passes the existing assertion in tests/test_visual_fallback.py
+  (b) does not break the AK0260R0600 AcroForm regression
+  (c) produces a diagnostic PNG at /tmp/visual_radio_debug/CO0006R0600_enhanced_payments_yes.png
+  (d) is built on the new geometry.py / probes.py / diagnostics.py structure described above, not as patches inside the old _detect_visual_radio_selection function
+  (e) exposes a structured return type (use a dataclass or TypedDict): { value: str | None, confidence: float, status: Literal["confident", "ambiguous", "not_found"], per_option_signatures: list[dict], anchors_matched: int }
+      The existing extract_single contract still returns a plain string — wrap the structured result at the boundary, but log the structured form to stderr when verbose=True.
+
+PROCESS — FOLLOW THIS ORDER, DO NOT SKIP STEPS
+
+Step 0. Acknowledge the constraints. Before writing code, reply with:
+  - The target variable
+  - The target document
+  - Your understanding of which of the 6 failure modes above are in scope for THIS session vs. deferred
+  - A 5–8 line plan for the new geometry module's API
+  Wait for my explicit "go" before writing code. If I don't reply, stop. Do not assume.
+
+Step 1. Inspect, don't code. Open CO0006R0600.pdf with PyMuPDF and dump, for the page containing the enhanced_payments_yes anchors, every vector drawing's (bbox, fill, stroke, even-odd flag, item count). Save the dump to /tmp/visual_radio_debug/CO0006R0600_page_dump.txt. Identify by visual+code inspection the exact geometric signature that distinguishes the selected radio from the unselected ones on THIS page. Write your finding as a 3–5 line comment block at the top of geometry.py. Show me this comment block before continuing.
+
+Step 2. Build geometry.py with pure functions only (no fitz/pypdf imports inside — they take primitive shapes as input). At minimum:
+    cluster_radio_column(drawings, page_height) -> tuple[float, float] | None
+    score_option_signature(drawings_in_roi) -> dict
+    pick_selected(option_scores: list[dict]) -> tuple[int | None, float, str]   # returns (index, confidence, status)
+
+Step 3. Build probes.py with the new probe schema (anchor_variants, expected_option_count, label_map, an optional render_hint dict for variable-specific overrides like "expected_radio_radius_pt" or "raster_fallback_enabled"). Migrate ONLY the enhanced_payments_yes probe.
+
+Step 4. Rewrite _detect_visual_radio_selection as a thin orchestrator that: locates anchors → asks geometry.cluster_radio_column for column bounds → builds per-option ROIs → calls geometry.score_option_signature for each → calls geometry.pick_selected → optionally falls through to the raster tier → returns the structured result.
+
+Step 5. Build diagnostics.py and emit the PNG.
+
+Step 6. Run the existing test_visual_fallback.py. Show me the output. Run a manual probe on CO0006R0600 with verbose=True and show me the structured log.
+
+Step 7. STOP. Do not touch any other variable or document. Report:
+  - What changed (file-by-file diff summary)
+  - The structured result for CO0006R0600/enhanced_payments_yes
+  - Any signatures you found suspicious that I should know about before we move to LA0866R0004
+  - Estimated lines of code touched
+
+DO NOT DO ANY OF THE FOLLOWING
+- Do not refactor the AcroForm Tier-1 code.
+- Do not change the public signature of extract_single.
+- Do not add OpenCV, numpy, scikit-image, or any ML dependency. Pillow is fine. Pure-Python geometry is preferred.
+- Do not delete the old _detect_visual_radio_selection function — keep it as _detect_visual_radio_selection_legacy with a deprecation comment so I can A/B compare during the next session.
+- Do not iterate past CO0006R0600 in this session even if you have spare context. The expansion is my decision based on the diagnostics.
+- Do not commit. Leave changes staged. I review the diff and commit myself.
+
+When you are ready, reply with the Step 0 acknowledgement and wait.
+
+
+
+
+
+
+We will expand to the full QC set ONLY after CO0006R0600 passes cleanly and a regression run on AK0260R0600 (AcroForm path, must not break) still passes. The full QC set, in iteration order, is:
+
+  CO0006R0600  ← start here
+  LA0866R0004
+  NV0152R0601
+  LA0121R0502
+  MA1027R0003     (known: ambiguous inner-fill — every option registers ≥2 fills)
+  MI023390R103    (known: zero radios in current x-window — layout/margin variant)
+  WA0443R0200     (known: anchor strings don't match template)
+  AR0188R0601
+  CA0141R0608
+  CO0211R0302
+  CO0961R0222
+  CT1040R0000
+  DE4159R0400
+  FL0418R0101
+  GA0112R0702
+  IA0213R0603
+  ID1076R0401
+  IL0143R0705
+  KS4164R0700
+  MD0353R0200
+  ME0127R0501
+  MN0025R0901
+  MN4169R0608
+  MS0255R0400
+  MT0148R0602
+  NC0132R0700
+  PA0386R0300

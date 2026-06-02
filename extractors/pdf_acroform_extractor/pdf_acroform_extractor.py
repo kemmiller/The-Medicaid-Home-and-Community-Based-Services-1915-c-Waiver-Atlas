@@ -130,6 +130,35 @@ TARGET_VARIABLES: list[dict[str, Any]] = [
         "csv_transform": None,
     },
     {
+        # Appendix B-6-b: Responsibility for Performing Evaluations and Reevaluations.
+        # Single column emitting the selected option's label.
+        "output_col":    "local_eval",
+        "token_hints":   ["svapdxB6_1:elgEvalRespType"],
+        "select_type":   "single",
+        "csv_transform": None,
+    },
+    {
+        # Appendix B-6-e: Level of Care Instrument(s) — same vs different instrument.
+        "output_col":    "local_eval_instrument",
+        "token_hints":   ["svapdxB6_1:elgEvalLOCInstType"],
+        "select_type":   "single",
+        "csv_transform": None,
+    },
+    {
+        # Appendix E-1-b: Participant Direction Opportunities (Employer / Budget / Both).
+        "output_col":    "sd_authority",
+        "token_hints":   ["svapdxE1_2:dosPtcOppType"],
+        "select_type":   "single",
+        "csv_transform": None,
+    },
+    {
+        # Appendix E-1-d: Election of Participant Direction.
+        "output_col":    "sd_election",
+        "token_hints":   ["svapdxE1_3:dosElctn"],
+        "select_type":   "single",
+        "csv_transform": None,
+    },
+    {
         # Appendix I-5-a: Services Furnished in Residential Settings.
         "output_col":    "payforresidential",
         "token_hints":   ["svapdxI5_1:fnaNonPerResSvc"],

@@ -17,6 +17,8 @@ from typing import Optional, Dict, Any, List
 from bs4 import BeautifulSoup
 import pandas as pd
 
+from extractors._radio_collapse import collapse_radio_groups
+
 
 class AppendixEExtractor:
     """Extracts Participant Direction fields from Appendix E."""
@@ -512,8 +514,15 @@ class AppendixEExtractor:
     # =========================================================================
 
     def extract_all(self) -> Dict[str, Any]:
-        """Extract all Appendix E fields."""
-        return {
+        """Extract all Appendix E fields.
+
+        Split radio flags (`sd_employerauth`/`sd_budgetauth`/`sd_bothauth` and
+        `sd_election_1/2/3`) are collapsed into the merged categorical columns
+        `sd_authority` and `sd_election` before returning. The collapse runs
+        once more in `process_single_file` after the TXT fallback so values
+        filled by the fallback are also collapsed.
+        """
+        data = {
             "document_id": self.document_id,
             # E-0 Participant Direction Offered
             "participant_direction_offered": self.participant_direction_offered,
@@ -557,6 +566,7 @@ class AppendixEExtractor:
             "sd_coemployer": self.sd_coemployer,
             "sd_commonlaw": self.sd_commonlaw,
         }
+        return data
 
 
 # =========================================================================
@@ -780,6 +790,10 @@ def process_single_file(file_path: str) -> Dict[str, Any]:
             if result.get(key) is None and val is not None:
                 result[key] = val
 
+    # Collapse split flags into merged categorical columns
+    # (sd_authority, sd_election). Runs after TXT fallback so any values
+    # filled by the fallback are also collapsed.
+    result = collapse_radio_groups(result)
     return result
 
 

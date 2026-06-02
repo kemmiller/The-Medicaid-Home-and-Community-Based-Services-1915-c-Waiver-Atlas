@@ -26,6 +26,8 @@ from pathlib import Path
 from typing import Optional, Dict, Any, List
 import pandas as pd
 
+from extractors._radio_collapse import collapse_radio_groups
+
 
 # =============================================================================
 # COLUMN DEFINITIONS
@@ -87,8 +89,9 @@ B1_COLUMNS = [
     "sed_group",
 ]
 
-# Appendix B-2: Individual Cost Limit
+# Appendix B-2: Individual Cost Limit (split flags; collapsed to `costlimit` on output)
 B2_COLUMNS = [
+    "cost_limit_nolimit",
     "cost_limit_excsinst_costs",
     "cost_limit_pcntaboveinstit",
     "cost_limit_instit",
@@ -834,6 +837,13 @@ class TextTopExtractor:
     # =========================================================================
 
     @property
+    def cost_limit_nolimit(self) -> Optional[int]:
+        """B-2-a: No Cost Limit (the state does not apply an individual cost limit)."""
+        return self._get_radio_selection_by_marker(
+            "B-2: Individual Cost Limit", "No Cost Limit"
+        )
+
+    @property
     def cost_limit_excsinst_costs(self) -> Optional[int]:
         """B-2-a: Cost Limit in Excess of Institutional Costs."""
         return self._get_radio_selection_by_marker(
@@ -1225,6 +1235,7 @@ class TextTopExtractor:
         data["sed_group"] = target_data.get("sed_group", None)
 
         # Appendix B-2: Individual Cost Limit
+        data["cost_limit_nolimit"] = self.cost_limit_nolimit
         data["cost_limit_excsinst_costs"] = self.cost_limit_excsinst_costs
         data["cost_limit_pcntaboveinstit"] = self.cost_limit_pcntaboveinstit
         data["cost_limit_instit"] = self.cost_limit_instit
@@ -1266,6 +1277,11 @@ class TextTopExtractor:
         data["spousal_impov_a"] = self.spousal_impov_a
         data["spousal_impov_b"] = self.spousal_impov_b
         data["spousal_impov_c"] = self.spousal_impov_c
+
+        # Collapse split radio flags into merged categorical columns
+        # (costlimit, spousal_impov_bc). B-6 local_eval extraction in the
+        # text extractor is on the backlog (see docs/priority_list.txt).
+        data = collapse_radio_groups(data)
 
         return data
 
