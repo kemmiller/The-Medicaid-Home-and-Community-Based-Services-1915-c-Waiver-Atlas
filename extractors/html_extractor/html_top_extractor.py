@@ -946,76 +946,125 @@ class HTMLTopExtractor:
     @property
     def eligibility_1(self) -> Optional[int]:
         """Low income families with children."""
-        return self._get_checkbox_value_by_id("svapdxB4_1:elgGrpSec1931")
+        val = self._get_checkbox_value_by_id("svapdxB4_1:elgGrpSec1931")
+        if val == "" or val is None:
+            val = self._check_label_checkbox("Low income families with children")
+        return val
 
     @property
     def eligibility_2(self) -> Optional[int]:
         """SSI recipients."""
-        return self._get_checkbox_value_by_id("svapdxB4_1:elgGrpSSIRcp")
+        val = self._get_checkbox_value_by_id("svapdxB4_1:elgGrpSSIRcp")
+        if val == "" or val is None:
+            val = self._check_label_checkbox("SSI recipients")
+        return val
 
     @property
     def eligibility_3(self) -> Optional[int]:
         """Aged, blind or disabled in 209(b) states."""
-        return self._get_checkbox_value_by_id("svapdxB4_1:elgGrpAbd")
+        val = self._get_checkbox_value_by_id("svapdxB4_1:elgGrpAbd")
+        if val == "" or val is None:
+            val = self._check_label_checkbox("Aged, blind or disabled in 209(b)")
+        return val
 
     @property
     def eligibility_4(self) -> Optional[int]:
         """Optional state supplement recipients."""
-        return self._get_checkbox_value_by_id("svapdxB4_1:elgGrpStSupRec")
+        val = self._get_checkbox_value_by_id("svapdxB4_1:elgGrpStSupRec")
+        if val == "" or val is None:
+            val = self._check_label_checkbox("Optional State supplement recipients")
+        return val
 
     @property
     def eligibility_5(self) -> Optional[int]:
         """Optional categorically needy aged and/or disabled individuals."""
-        return self._get_checkbox_value_by_id("svapdxB4_1:elgGrpCatNdy")
-
-    @property
-    def eligibility_5_100(self) -> Optional[str]:
-        """Eligibility 5: 100% of FPL radio button (returns text)."""
-        if self._get_checkbox_value_by_id("svapdxB4_1:elgGrpCatNdyType:0") == 1:
-            return "100% of the Federal poverty level (FPL)"
-        if self._get_checkbox_value_by_id("svapdxB4_1:elgGrpCatNdyType:1") == 1:
-            return "% of FPL, which is lower than 100% of FPL."
-        return None
+        val = self._get_checkbox_value_by_id("svapdxB4_1:elgGrpCatNdy")
+        if val == "" or val is None:
+            val = self._check_label_checkbox("Optional categorically needy aged")
+        return val
 
     @property
     def eligibility_5_percent(self) -> str:
         """Eligibility 5: Specify percentage below 100% FPL."""
-        return self._get_text_input_value_by_id("svapdxB4_1:elgGrpCatNdyFPLPct")
+        val = self._get_text_input_value_by_id("svapdxB4_1:elgGrpCatNdyFPLPct")
+        if not val and self._is_htm:
+            try:
+                label = self.document.find(
+                    string=lambda x: x and "Specify percentage" in str(x)
+                )
+                if label:
+                    p = label.find_parent("p")
+                    if p:
+                        # Value may be inline after "Specify percentage:<span/>"
+                        raw = p.get_text().strip()
+                        after = raw.split("Specify percentage")[-1].strip().strip(":").strip()
+                        if after:
+                            val = after
+                        else:
+                            nxt = p.find_next_sibling("p")
+                            if nxt:
+                                text = nxt.get_text().strip()
+                                if text and "Working individuals" not in text:
+                                    val = text
+            except (AttributeError, TypeError):
+                pass
+        return val
 
     @property
     def eligibility_6(self) -> Optional[int]:
         """Working individuals with disabilities (BBA)."""
-        return self._get_checkbox_value_by_id("svapdxB4_1:elgGrpWrkDisBBA")
+        val = self._get_checkbox_value_by_id("svapdxB4_1:elgGrpWrkDisBBA")
+        if val == "" or val is None:
+            val = self._check_label_checkbox("BBA working disabled group")
+        return val
 
     @property
     def eligibility_7(self) -> Optional[int]:
         """Working individuals with disabilities (TWWIIA Basic)."""
-        return self._get_checkbox_value_by_id("svapdxB4_1:elgGrpWrkDisTBCG")
+        val = self._get_checkbox_value_by_id("svapdxB4_1:elgGrpWrkDisTBCG")
+        if val == "" or val is None:
+            val = self._check_label_checkbox("TWWIIA Basic Coverage Group")
+        return val
 
     @property
     def eligibility_8(self) -> Optional[int]:
         """Working individuals with disabilities (TWWIIA Medical Improvement)."""
-        return self._get_checkbox_value_by_id("svapdxB4_1:elgGrpWrkDisTMICG")
+        val = self._get_checkbox_value_by_id("svapdxB4_1:elgGrpWrkDisTMICG")
+        if val == "" or val is None:
+            val = self._check_label_checkbox("TWWIIA Medical Improvement")
+        return val
 
     @property
     def eligibility_9(self) -> Optional[int]:
         """Disabled individuals age 18 or younger (TEFRA 134)."""
-        return self._get_checkbox_value_by_id("svapdxB4_1:elgGrpDisTEFRA134")
+        val = self._get_checkbox_value_by_id("svapdxB4_1:elgGrpDisTEFRA134")
+        if val == "" or val is None:
+            val = self._check_label_checkbox("TEFRA 134")
+        return val
 
     @property
     def eligibility_10(self) -> Optional[int]:
         """Medically needy in 209(b) States."""
-        return self._get_checkbox_value_by_id("svapdxB4_1:elgGrpMedNdy209")
+        val = self._get_checkbox_value_by_id("svapdxB4_1:elgGrpMedNdy209")
+        if val == "" or val is None:
+            val = self._check_label_checkbox("Medically needy in 209(b)")
+        return val
 
     @property
     def eligibility_11(self) -> Optional[int]:
         """Medically needy in 1634 States and SSI Criteria States."""
-        return self._get_checkbox_value_by_id("svapdxB4_1:elgGrpMedNdySSI")
+        val = self._get_checkbox_value_by_id("svapdxB4_1:elgGrpMedNdySSI")
+        if val == "" or val is None:
+            val = self._check_label_checkbox("Medically needy in 1634 States")
+        return val
 
     @property
     def eligibility_12(self) -> Optional[int]:
         """Other specified groups."""
-        return self._get_checkbox_value_by_id("svapdxB4_1:elgGrpOth")
+        val = self._get_checkbox_value_by_id("svapdxB4_1:elgGrpOth")
+        if val == "" or val is None:
+            val = self._check_label_checkbox("Other specified groups")
+        return val
 
     # =========================================================================
     # APPENDIX B-5: POST-ELIGIBILITY TREATMENT
@@ -1035,7 +1084,32 @@ class HTMLTopExtractor:
     @property
     def spousal_impov_a(self) -> Optional[int]:
         """B-5: Spousal impoverishment rules used checkbox."""
-        return self._get_checkbox_value_by_id("svapdxB5_1:elgIncSpoImpRls_2014")
+        val = self._get_checkbox_value_by_id("svapdxB5_1:elgIncSpoImpRls_2014")
+        if (val == "" or val is None) and self._is_htm:
+            try:
+                # Target specifically <p class="s2"> containing the mandatory spousal text
+                # to avoid matching the radio button paragraphs below it
+                p = self.document.find(
+                    "p", class_="s2",
+                    string=lambda x: x and "Spousal impoverishment rules" in str(x)
+                )
+                if not p:
+                    # Try find with get_text match
+                    for tag in self.document.find_all("p", class_="s2"):
+                        if "Spousal impoverishment rules" in tag.get_text() and "determine the eligibility" in tag.get_text():
+                            p = tag
+                            break
+                if p:
+                    raw = str(p)
+                    label_pos = raw.find("Spousal impoverishment rules")
+                    pre = raw[:label_pos]
+                    if "" in pre:
+                        val = 1
+                    elif "<span/>" in pre or "<span>" in pre:
+                        val = 0
+            except (AttributeError, TypeError):
+                pass
+        return val
 
     @property
     def spousal_impov_b(self) -> Optional[int]:
