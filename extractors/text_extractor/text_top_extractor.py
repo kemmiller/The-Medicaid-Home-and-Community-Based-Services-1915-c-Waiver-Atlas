@@ -206,7 +206,7 @@ class TextTopExtractor:
             return ""
         # Normalize common encoding artifacts and smart quotes
         for bad, good in [
-            ("�", ""), ("‘", "'"), ("’", "'"),
+            ("ÔøΩ", ""), ("�", ""), ("‘", "'"), ("’", "'"),
             ("“", '"'), ("”", '"'), (" ", " "),
         ]:
             text = text.replace(bad, good)
