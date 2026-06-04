@@ -1292,7 +1292,16 @@ def get_summary(df: pd.DataFrame) -> pd.DataFrame:
         if col == "document_id":
             continue
 
-        if df[col].dtype in ["int64", "float64"]:
+        # These are always text even if they contain numbers
+        _text_cols = {"aged_group_min", "aged_group_max", "eligibility_5_percent",
+                      "cost_limit_pcntaboveinstit", "numberofbenes_year1",
+                      "numberofbenes_year2", "numberofbenes_year3",
+                      "numberofbenes_year4", "numberofbenes_year5",
+                      "max_numberofbenes_year1", "max_numberofbenes_year2",
+                      "max_numberofbenes_year3", "max_numberofbenes_year4",
+                      "max_numberofbenes_year5"}
+
+        if df[col].dtype in ["int64", "float64"] and col not in _text_cols:
             # Checkbox columns
             checked = (df[col] == 1).sum() + (df[col] == 0).sum()
             summary_data.append(
@@ -1306,7 +1315,7 @@ def get_summary(df: pd.DataFrame) -> pd.DataFrame:
             )
         else:
             # Text columns
-            non_empty = (df[col].notna() & (df[col] != "")).sum()
+            non_empty = (df[col].notna() & (df[col].astype(str) != "") & (df[col].astype(str) != "nan")).sum()
             summary_data.append(
                 {
                     "Column": col,
