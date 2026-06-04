@@ -524,11 +524,13 @@ class TextTopExtractor:
             i = self._get_index(
                 "1. Request Information (3 of 3)", "G.", "1915(i) of the Act"
             )
-            return self._is_checkbox_checked(self[i - 1]) or self._is_checkbox_checked(
-                self[i - 2]
-            )
+            for offset in (1, 2):
+                val = self._is_checkbox_checked(self[i - offset])
+                if val is not None:
+                    return val
         except (ValueError, IndexError):
-            return None
+            pass
+        return None
 
     @property
     def concurrent_1915j(self) -> Optional[int]:
@@ -537,11 +539,13 @@ class TextTopExtractor:
             i = self._get_index(
                 "1. Request Information (3 of 3)", "G.", "1915(j) of the Act"
             )
-            return self._is_checkbox_checked(self[i - 1]) or self._is_checkbox_checked(
-                self[i - 2]
-            )
+            for offset in (1, 2):
+                val = self._is_checkbox_checked(self[i - offset])
+                if val is not None:
+                    return val
         except (ValueError, IndexError):
-            return None
+            pass
+        return None
 
     @property
     def concurrent_1115(self) -> Optional[int]:
@@ -550,11 +554,13 @@ class TextTopExtractor:
             i = self._get_index(
                 "1. Request Information (3 of 3)", "G.", "1115 of the Act"
             )
-            return self._is_checkbox_checked(self[i - 1]) or self._is_checkbox_checked(
-                self[i - 2]
-            )
+            for offset in (1, 2):
+                val = self._is_checkbox_checked(self[i - offset])
+                if val is not None:
+                    return val
         except (ValueError, IndexError):
-            return None
+            pass
+        return None
 
     @property
     def dual_elg(self) -> Optional[int]:
