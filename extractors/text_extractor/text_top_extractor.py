@@ -201,7 +201,7 @@ class TextTopExtractor:
         return self._is_checkbox_checked(self[i - 1])
 
     def _clean_text(self, text: str) -> str:
-        """Remove page-break artifacts (URLs, dates) and normalize whitespace."""
+        """Remove page-break artifacts (URLs, dates, form field IDs) and normalize whitespace."""
         if not text:
             return ""
         text = re.sub(r"Application for 1915\(c\) HCBS Waiver:[^P]*Page \d+ of \d+", "", text)
@@ -209,6 +209,8 @@ class TextTopExtractor:
         text = re.sub(r"https?://\S+", "", text)
         text = re.sub(r"\(\d{2}/\d{2}/\d{4}\)", "", text)
         text = re.sub(r"\d{2}/\d{2}/\d{4}", "", text)
+        # Remove form field ID artifacts (e.g. svloc:locNurFacType, svapdxB1_1:tgagAgedInc)
+        text = re.sub(r"\bsv\w+:\w+\b", "", text)
         text = re.sub(r"\s+", " ", text)
         return text.strip()
 
@@ -333,10 +335,7 @@ class TextTopExtractor:
                         if not stripped.startswith("Select applicable"):
                             text_lines.append(stripped)
 
-            result = " ".join(text_lines).strip()
-            result = re.sub(r"^[\s\n]+", "", result)
-            result = re.sub(r"[\s\n]+$", "", result)
-            return result
+            return self._clean_text(" ".join(text_lines))
         except:
             return ""
 
