@@ -1091,21 +1091,29 @@ class TextTopExtractor:
     @property
     def eligibility_6(self) -> Optional[int]:
         """Working individuals with disabilities (BBA)."""
-        return self._get_inline_checkbox("Working individuals with disabilities (BBA)")
+        for marker in ["BBA working disabled group", "buy into Medicaid (BBA", "§1902(a)(10)(A)(ii)(XIII)"]:
+            val = self._get_inline_checkbox(marker)
+            if val is not None:
+                return val
+        return None
 
     @property
     def eligibility_7(self) -> Optional[int]:
         """Working individuals with disabilities (TWWIIA Basic)."""
-        return self._get_inline_checkbox(
-            "Working individuals with disabilities eligible under §1902(a)(10)(A)(ii)(XIII)"
-        )
+        for marker in ["TWWIIA Basic Coverage Group", "(TWWIIA Basic", "§1902(a)(10)(A)(ii)(XV)"]:
+            val = self._get_inline_checkbox(marker)
+            if val is not None:
+                return val
+        return None
 
     @property
     def eligibility_8(self) -> Optional[int]:
         """Working individuals with disabilities (TWWIIA Medical Improvement)."""
-        return self._get_inline_checkbox(
-            "Working individuals with disabilities eligible under §1902(a)(10)(A)(ii)(XV)"
-        )
+        for marker in ["TWWIIA Medical Improvement Coverage Group", "(TWWIIA Medical Improvement", "§1902(a)(10)(A)(ii)(XVI)"]:
+            val = self._get_inline_checkbox(marker)
+            if val is not None:
+                return val
+        return None
 
     @property
     def eligibility_9(self) -> Optional[int]:
