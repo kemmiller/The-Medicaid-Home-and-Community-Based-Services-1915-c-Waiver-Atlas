@@ -201,18 +201,30 @@ class TextTopExtractor:
         return self._is_checkbox_checked(self[i - 1])
 
     def _clean_text(self, text: str) -> str:
-        """Remove page-break artifacts (URLs, dates, form field IDs) and normalize whitespace."""
+        """Remove artifacts, normalize characters, and validate extracted text."""
         if not text:
             return ""
+        # Normalize common encoding artifacts and smart quotes
+        for bad, good in [
+            ("�", ""), ("‘", "'"), ("’", "'"),
+            ("“", '"'), ("”", '"'), (" ", " "),
+        ]:
+            text = text.replace(bad, good)
         text = re.sub(r"Application for 1915\(c\) HCBS Waiver:[^P]*Page \d+ of \d+", "", text)
         text = re.sub(r"https?://\S+\s*\d{1,2}/\d{1,2}/\d{4}", "", text)
         text = re.sub(r"https?://\S+", "", text)
         text = re.sub(r"\(\d{2}/\d{2}/\d{4}\)", "", text)
         text = re.sub(r"\d{2}/\d{2}/\d{4}", "", text)
-        # Remove form field ID artifacts (e.g. svloc:locNurFacType, svapdxB1_1:tgagAgedInc)
         text = re.sub(r"\bsv\w+:\w+\b", "", text)
-        text = re.sub(r"\s+", " ", text)
-        return text.strip()
+        text = re.sub(r"\s+", " ", text).strip()
+        # Reject prompt labels that leaked through
+        if text.lower() in ("geographic area:", "specify the areas", "select applicable",
+                            "specify:", "select one:"):
+            return ""
+        # Reject text with almost no letters (pure artifact)
+        if len(re.findall(r"[A-Za-z]", text)) < 3:
+            return ""
+        return text
 
     def _is_numeric(self, value: str) -> bool:
         """Check if a string is numeric."""
@@ -303,16 +315,18 @@ class TextTopExtractor:
         return ""
 
     def _extract_limits_text(
-        self, start_marker: str, limits_marker: str, end_marker: str
+        self, start_marker: str, limits_marker: str, end_marker
     ) -> str:
         """Extract text box content for level of care limits."""
         try:
+            end_markers = end_marker if isinstance(end_marker, list) else [end_marker]
             in_section = False
             found_limits_marker = False
             text_lines = []
 
-            for i, line in enumerate(self._document):
+            for line in self._document:
                 stripped = line.strip()
+                lower = stripped.lower()
 
                 if start_marker.lower() in line.lower():
                     in_section = True
@@ -323,17 +337,20 @@ class TextTopExtractor:
                     continue
 
                 if found_limits_marker:
-                    if end_marker.lower() in line.lower():
+                    if any(em.lower() in lower for em in end_markers):
                         break
                     if (
                         stripped.startswith("1. Request Information")
                         or stripped.startswith("2. Brief")
                         or stripped.startswith("G.")
+                        or stripped.startswith("Select applicable")
+                        or "Level(s) of Care" in stripped
                     ):
                         break
                     if stripped and stripped not in ["on", "Off", "Yes"]:
-                        if not stripped.startswith("Select applicable"):
-                            text_lines.append(stripped)
+                        cleaned = self._clean_text(stripped)
+                        if cleaned:
+                            text_lines.append(cleaned)
 
             return self._clean_text(" ".join(text_lines))
         except:
@@ -382,16 +399,21 @@ class TextTopExtractor:
 
         Always appears as the first non-empty line after 'Type of Waiver (select only one):'.
         """
+        _bad = re.compile(
+            r"Request Information|Proposed Effective|Approved Effective"
+            r"|\d{1,2}/\d{1,2}/\d{2,4}|^\.+$|PRA Disclosure",
+            re.IGNORECASE,
+        )
         try:
             start_idx = self._get_index("Type of Waiver (select only one)")
             for i in range(start_idx + 1, min(start_idx + 8, len(self._no_newline_document))):
                 line = self._no_newline_document[i].strip()
-                # Stop at section E boundary
                 if (line.startswith("E.") or "Proposed Effective" in line
                         or "Approved Effective" in line):
                     break
                 if (line and line not in ["on", "Off", "Yes"]
-                        and not line.startswith("svgeninfo")):
+                        and not line.startswith("svgeninfo")
+                        and not _bad.search(line)):
                     return line
         except:
             pass
@@ -453,7 +475,7 @@ class TextTopExtractor:
         return self._extract_limits_text(
             start_marker="Hospital as defined in 42 CFR",
             limits_marker="If applicable, specify whether the state additionally limits the waiver to subcategories of the hospital level of care",
-            end_marker="Inpatient psychiatric facility",
+            end_marker=["Inpatient psychiatric facility", "Nursing Facility", "Intermediate Care Facility"],
         )
 
     @property
@@ -469,7 +491,7 @@ class TextTopExtractor:
         return self._extract_limits_text(
             start_marker="Nursing Facility as defined in 42 CFR",
             limits_marker="If applicable, specify whether the state additionally limits the waiver to subcategories of the nursing facility level of care",
-            end_marker="Institution for Mental Disease",
+            end_marker=["Institution for Mental Disease", "Intermediate Care Facility", "Request Information (3 of 3)"],
         )
 
     @property
@@ -487,7 +509,7 @@ class TextTopExtractor:
         return self._extract_limits_text(
             start_marker="Intermediate Care Facility for Individuals with Intellectual Disabilities",
             limits_marker="If applicable, specify whether the state additionally limits the waiver to subcategories of the ICF",
-            end_marker="Request Information (3 of 3)",
+            end_marker=["Request Information (3 of 3)", "Concurrent Operation", "G."],
         )
 
     # =========================================================================
