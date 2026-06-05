@@ -1265,16 +1265,36 @@ def process_single_file(file_path: str) -> Dict[str, Any]:
     return extractor.extract_all()
 
 
+_SKIP_FILENAME = re.compile(
+    r"approval.?letter|approvalletter|email|submission|submittal"
+    r"|amendment(?!.*R\d{2})|cover.?letter|fromokcaid",
+    re.IGNORECASE,
+)
+
+
+def _is_waiver_doc(path: Path) -> bool:
+    """Return True if the filename looks like a real waiver document."""
+    stem = re.sub(r"[.\-_ ]", "", path.stem).upper()
+    if not re.match(r"^[A-Z]{2}\d{4,5}R\d+", stem):
+        return False
+    if _SKIP_FILENAME.search(path.stem):
+        return False
+    return True
+
+
 def process_directory(
     input_dir: str, output_csv: str = None, verbose: bool = True
 ) -> pd.DataFrame:
     """Process all HTML files in a directory."""
-    htm_files = list(Path(input_dir).glob("**/*.htm")) + list(
+    all_files = list(Path(input_dir).glob("**/*.htm")) + list(
         Path(input_dir).glob("**/*.html")
     )
+    htm_files = [f for f in all_files if _is_waiver_doc(f)]
 
     if verbose:
-        print(f"Found {len(htm_files)} HTML files in {input_dir}")
+        skipped = len(all_files) - len(htm_files)
+        print(f"Found {len(all_files)} HTML files, skipping {skipped} non-waiver files")
+        print(f"Processing {len(htm_files)} waiver files")
         print("=" * 60)
 
     results = []

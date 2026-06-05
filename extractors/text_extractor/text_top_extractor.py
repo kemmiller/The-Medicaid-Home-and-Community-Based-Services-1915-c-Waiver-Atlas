@@ -1354,14 +1354,34 @@ def process_single_file(file_path: str) -> Dict[str, Any]:
     return extractor.extract_all()
 
 
+_SKIP_FILENAME = re.compile(
+    r"approval.?letter|approvalletter|email|submission|submittal"
+    r"|amendment(?!.*R\d{2})|cover.?letter|fromokcaid",
+    re.IGNORECASE,
+)
+
+
+def _is_waiver_doc(path: Path) -> bool:
+    """Return True if the filename looks like a real waiver document."""
+    stem = re.sub(r"[.\-_ ]", "", path.stem).upper()
+    if not re.match(r"^[A-Z]{2}\d{4,5}R\d+", stem):
+        return False
+    if _SKIP_FILENAME.search(path.stem):
+        return False
+    return True
+
+
 def process_directory(
     input_dir: str, output_csv: str = None, verbose: bool = True
 ) -> pd.DataFrame:
     """Process all text files in a directory."""
-    txt_files = list(Path(input_dir).glob("**/*.txt"))
+    all_files = list(Path(input_dir).glob("**/*.txt"))
+    txt_files = [f for f in all_files if _is_waiver_doc(f)]
 
     if verbose:
-        print(f"Found {len(txt_files)} text files in {input_dir}")
+        skipped = len(all_files) - len(txt_files)
+        print(f"Found {len(all_files)} text files, skipping {skipped} non-waiver files")
+        print(f"Processing {len(txt_files)} waiver files")
         print("=" * 60)
 
     results = []
