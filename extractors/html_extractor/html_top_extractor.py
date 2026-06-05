@@ -288,18 +288,28 @@ class HTMLTopExtractor:
         return element.attrs.get("value", "").strip()
 
     def _clean_text(self, text: str) -> str:
-        """Remove page-break artifacts (URLs, dates) and normalize whitespace."""
+        """Remove artifacts, normalize characters, and validate extracted text."""
         if not text:
             return ""
-        text = re.sub(
-            r"Application for 1915\(c\) HCBS Waiver:[^P]*Page \d+ of \d+", "", text
-        )
+        # Normalize encoding artifacts and smart quotes
+        for bad, good in [
+            ("�", ""), ("ÔøΩ", ""), ("", ""), ("✔", ""),
+            ("‘", "'"), ("’", "'"), ("“", '"'), ("”", '"'),
+            ("\xa0", " "),
+        ]:
+            text = text.replace(bad, good)
+        text = re.sub(r"Application for 1915\(c\) HCBS Waiver:[^P]*Page \d+ of \d+", "", text)
         text = re.sub(r"https?://\S+\s*\d{1,2}/\d{1,2}/\d{4}", "", text)
         text = re.sub(r"https?://\S+", "", text)
         text = re.sub(r"\(\d{2}/\d{2}/\d{4}\)", "", text)
         text = re.sub(r"\d{2}/\d{2}/\d{4}", "", text)
-        text = re.sub(r"\s+", " ", text)
-        return text.strip()
+        # Remove OCR noise: repeated dots/punctuation
+        text = re.sub(r"[.\s]{5,}", " ", text)
+        text = re.sub(r"\s+", " ", text).strip()
+        # Reject if almost no real letters
+        if len(re.findall(r"[A-Za-z]", text)) < 3:
+            return ""
+        return text
 
     def _get_textarea_value_by_id(self, element_id: str) -> str:
         """Get textarea content by element ID."""
@@ -341,14 +351,15 @@ class HTMLTopExtractor:
     @property
     def title(self) -> str:
         """Program Title (Section 1-B)."""
+        _skip = re.compile(r"^[A-Z]\.$|https?://|PrintSelector|Application for 1915", re.IGNORECASE)
         try:
             # Native .htm: <span id="...programTitle">
             span = self.document.find(
                 "span", id=lambda x: x and x.endswith("programTitle")
             )
             if span:
-                val = span.get_text().strip()
-                if val:
+                val = self._clean_text(span.get_text().strip())
+                if val and not _skip.search(val):
                     return val
 
             # PDF-converted: title is in the first non-empty <p> after the paragraph
@@ -362,11 +373,12 @@ class HTMLTopExtractor:
                 if p:
                     for nxt in p.find_next_siblings("p"):
                         val = nxt.get_text().strip()
-                        # Stop if we've reached section C
                         if "Type of Request" in val or val.startswith("C."):
                             break
-                        if val:
-                            return val
+                        if val and not _skip.search(val):
+                            cleaned = self._clean_text(val)
+                            if cleaned:
+                                return cleaned
         except (AttributeError, TypeError):
             pass
         return ""
@@ -394,10 +406,25 @@ class HTMLTopExtractor:
     @property
     def waiver_type(self) -> str:
         """Type of Waiver (Section 1-D)."""
+        _valid = [
+            "Regular Waiver",
+            "Model Waiver",
+            "Independence Plus Waiver",
+            "Concurrent Section 1915(b) and 1915(c) Waiver",
+        ]
+        _bad = re.compile(r"https?://|Proposed Effective|Approved Effective|Attachment|Request Information|\d{1,2}/\d{1,2}/\d{2,4}", re.IGNORECASE)
+
+        def _match_valid(text):
+            for vt in _valid:
+                if vt.lower() in text.lower():
+                    return vt
+            return None
+
         # Native .htm: dropdown select
         val = self._get_dropdown_value_by_id("svgeninfo:ddlWaiverType")
         if val:
-            return val
+            matched = _match_valid(val)
+            return matched if matched else ""
         try:
             label = self.document.find(
                 string=lambda x: x and "Type of Waiver" in str(x)
@@ -413,12 +440,10 @@ class HTMLTopExtractor:
                 if p:
                     for nxt in p.find_next_siblings("p"):
                         text = _clean(nxt)
-                        if (
-                            text
-                            and "Proposed Effective" not in text
-                            and "select only one" not in text.lower()
-                        ):
-                            return text
+                        if text and not _bad.search(text) and "select only one" not in text.lower():
+                            matched = _match_valid(text)
+                            if matched:
+                                return matched
 
                 # .htm layout: value is in <p class="s6"> inside the previous <li>
                 if li:
@@ -428,7 +453,9 @@ class HTMLTopExtractor:
                         if s6:
                             text = _clean(s6)
                             if text:
-                                return text
+                                matched = _match_valid(text)
+                                if matched:
+                                    return matched
         except (AttributeError, TypeError):
             pass
         return ""
@@ -1032,7 +1059,11 @@ class HTMLTopExtractor:
         val = self._get_checkbox_value_by_id("svapdxB4_1:elgGrpWrkDisTMICG")
         if val == "" or val is None:
             val = self._check_label_checkbox("TWWIIA Medical Improvement")
-        return val
+        # Only return if it looks like a real number/percentage
+        if val:
+            cleaned = re.sub(r"[^\d.]", "", str(val)).strip()
+            return cleaned if cleaned else ""
+        return ""
 
     @property
     def eligibility_9(self) -> Optional[int]:
