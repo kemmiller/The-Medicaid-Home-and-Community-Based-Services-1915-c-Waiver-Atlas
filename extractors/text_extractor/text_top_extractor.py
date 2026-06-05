@@ -368,22 +368,27 @@ class TextTopExtractor:
           - Inline:  'Program Title (...optional...): Elderly, Blind, and Disabled'
           - Separate: 'Program Title (...optional):' then title on the next non-empty line
         """
+        _skip = re.compile(r"https?://|PrintSelector|svgeninfo|Application for 1915", re.IGNORECASE)
         try:
             for i, line in enumerate(self._no_newline_document):
-                # Match both "optional - this" and "optional -this" (no space variant)
                 if "optional" in line and "this title will be used to locate" in line:
                     # Inline: title follows the colon on the same line
                     if ":" in line:
                         after = line.split(":")[-1].strip()
-                        if after and not after.startswith("svgeninfo"):
+                        after = self._clean_text(after)
+                        if after and not _skip.search(after):
                             return after
                     # Separate: title is on the next non-empty, non-artifact line
                     for j in range(i + 1, min(i + 6, len(self._no_newline_document))):
                         nxt = self._no_newline_document[j].strip()
-                        if nxt and not nxt.startswith("svgeninfo") and nxt not in ["on", "Off", "Yes"]:
+                        if nxt and nxt not in ["on", "Off", "Yes"]:
                             if "Type of Request" in nxt or nxt.startswith("C."):
                                 break
-                            return nxt
+                            if _skip.search(nxt):
+                                continue
+                            cleaned = self._clean_text(nxt)
+                            if cleaned:
+                                return cleaned
         except:
             pass
         return ""
@@ -399,8 +404,15 @@ class TextTopExtractor:
 
         Always appears as the first non-empty line after 'Type of Waiver (select only one):'.
         """
-        _bad = re.compile(
+        _valid = [
+            "Regular Waiver",
+            "Model Waiver",
+            "Independence Plus Waiver",
+            "Concurrent Section 1915(b) and 1915(c) Waiver",
+        ]
+        _stop = re.compile(
             r"Request Information|Proposed Effective|Approved Effective"
+            r"|Level\(s\) of Care|^F\.|^E\.|^G\."
             r"|\d{1,2}/\d{1,2}/\d{2,4}|^\.+$|PRA Disclosure",
             re.IGNORECASE,
         )
@@ -408,13 +420,12 @@ class TextTopExtractor:
             start_idx = self._get_index("Type of Waiver (select only one)")
             for i in range(start_idx + 1, min(start_idx + 8, len(self._no_newline_document))):
                 line = self._no_newline_document[i].strip()
-                if (line.startswith("E.") or "Proposed Effective" in line
-                        or "Approved Effective" in line):
+                if _stop.search(line):
                     break
-                if (line and line not in ["on", "Off", "Yes"]
-                        and not line.startswith("svgeninfo")
-                        and not _bad.search(line)):
-                    return line
+                if line and line not in ["on", "Off", "Yes"] and not line.startswith("svgeninfo"):
+                    for vt in _valid:
+                        if vt.lower() in line.lower():
+                            return vt
         except:
             pass
         return ""
