@@ -1243,6 +1243,116 @@ class TextTopExtractor:
         return None
 
     # =========================================================================
+    # APPENDIX B-6: EVALUATION / REEVALUATION OF LEVEL OF CARE
+    # =========================================================================
+
+    @property
+    def min_numservices(self) -> str:
+        """B-6-a-i: Minimum number of waiver services (text box)."""
+        try:
+            start_idx = self._get_index("B-6: Evaluation/Reevaluation of Level of Care")
+            for i in range(
+                start_idx, min(start_idx + 100, len(self._no_newline_document))
+            ):
+                line = self._no_newline_document[i]
+                m = re.search(r"need waiver services is:\s*(\S+)", line, re.IGNORECASE)
+                if m:
+                    return m.group(1).strip()
+        except:
+            pass
+        return ""
+
+    @property
+    def local_eval_a(self) -> Optional[int]:
+        """B-6-b: Evaluations performed directly by the Medicaid agency."""
+        return self._get_radio_selection_by_marker(
+            "Responsibility for Performing", "Directly by the Medicaid agency"
+        )
+
+    @property
+    def local_eval_b(self) -> Optional[int]:
+        """B-6-b: Evaluations performed by the operating agency in Appendix A."""
+        return self._get_radio_selection_by_marker(
+            "Responsibility for Performing",
+            "By the operating agency specified in Appendix A",
+        )
+
+    @property
+    def local_eval_c(self) -> Optional[int]:
+        """B-6-b: Evaluations performed by a contracted entity / government agency.
+
+        Accept both template wordings: older docs render this option as
+        "By an entity under contract..."; modern templates use "By a
+        government agency under contract...". Returns 1 if either wording
+        is selected, 0 if either wording is present-but-unselected, None
+        if neither phrase is found.
+        """
+        a = self._get_radio_selection_by_marker(
+            "Responsibility for Performing",
+            "By an entity under contract with the Medicaid agency",
+        )
+        b = self._get_radio_selection_by_marker(
+            "Responsibility for Performing",
+            "By a government agency under contract with the Medicaid agency",
+        )
+        if a == 1 or b == 1:
+            return 1
+        if a == 0 or b == 0:
+            return 0
+        return None
+
+    @property
+    def local_eval_d(self) -> Optional[int]:
+        """B-6-b: Evaluations performed by an Other entity."""
+        return self._get_radio_selection_by_marker(
+            "Responsibility for Performing", "Other"
+        )
+
+    @property
+    def local_eval_instrument_same(self) -> Optional[int]:
+        """B-6-e: Same instrument used for waiver and institutional LOC."""
+        return self._get_radio_selection_by_marker(
+            "Level of Care Instrument",
+            "The same instrument is used in determining the level of care for the waiver",
+        )
+
+    @property
+    def local_eval_instrument_diff(self) -> Optional[int]:
+        """B-6-e: Different instrument used for waiver vs. institutional LOC."""
+        return self._get_radio_selection_by_marker(
+            "Level of Care Instrument",
+            "A different instrument is used to determine the level of care for the waiver",
+        )
+
+    @property
+    def reeval_sched_3mo(self) -> Optional[int]:
+        """B-6-g: Reevaluation every three months."""
+        return self._get_radio_selection_by_marker(
+            "Reevaluation Schedule", "Every three months"
+        )
+
+    @property
+    def reeval_sched_6mo(self) -> Optional[int]:
+        """B-6-g: Reevaluation every six months."""
+        return self._get_radio_selection_by_marker(
+            "Reevaluation Schedule", "Every six months"
+        )
+
+    @property
+    def reeval_sched_12mo(self) -> Optional[int]:
+        """B-6-g: Reevaluation every twelve months."""
+        return self._get_radio_selection_by_marker(
+            "Reevaluation Schedule", "Every twelve months"
+        )
+
+    @property
+    def reeval_sched_other(self) -> Optional[int]:
+        """B-6-g: Reevaluation on other schedule."""
+        return self._get_radio_selection_by_marker(
+            "Reevaluation Schedule", "Other schedule"
+        )
+
+    # =========================================================================
     # MAIN EXTRACTION METHOD
     # =========================================================================
 
@@ -1326,6 +1436,25 @@ class TextTopExtractor:
 
         # Appendix B-5: Post-Eligibility Treatment
         data["spousal_impov_a"] = self.spousal_impov_a
+        data["spousal_impov_b"] = self.spousal_impov_b
+        data["spousal_impov_c"] = self.spousal_impov_c
+
+        # Appendix B-6: Level-of-Care Evaluation
+        data["min_numservices"] = self.min_numservices
+        data["local_eval_a"] = self.local_eval_a
+        data["local_eval_b"] = self.local_eval_b
+        data["local_eval_c"] = self.local_eval_c
+        data["local_eval_d"] = self.local_eval_d
+        data["local_eval_instrument_same"] = self.local_eval_instrument_same
+        data["local_eval_instrument_diff"] = self.local_eval_instrument_diff
+        data["reeval_sched_3mo"] = self.reeval_sched_3mo
+        data["reeval_sched_6mo"] = self.reeval_sched_6mo
+        data["reeval_sched_12mo"] = self.reeval_sched_12mo
+        data["reeval_sched_other"] = self.reeval_sched_other
+
+        # NOTE: split-flag → merged-column collapse is intentionally NOT
+        # called here (see html_top_extractor.py for rationale).
+        # Collapse happens externally in the merge pipeline.
 
         return data
 

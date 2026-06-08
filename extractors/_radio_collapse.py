@@ -37,7 +37,7 @@ RADIO_GROUPS: List[Tuple[str, List[Tuple[str, str]]]] = [
         [
             ("local_eval_a", "Directly by the Medicaid agency"),
             ("local_eval_b", "By the operating agency specified in Appendix A"),
-            ("local_eval_c", "By an entity under contract with the Medicaid agency"),
+            ("local_eval_c", "By a government agency under contract with the Medicaid agency"),
             ("local_eval_d", "Other"),
         ],
     ),
@@ -46,6 +46,15 @@ RADIO_GROUPS: List[Tuple[str, List[Tuple[str, str]]]] = [
         [
             ("local_eval_instrument_same", "Same instrument used for waiver and institutional level of care"),
             ("local_eval_instrument_diff", "Different instrument used for waiver vs. institutional level of care"),
+        ],
+    ),
+    (
+        "reeval_sched",
+        [
+            ("reeval_sched_3mo", "Every three months"),
+            ("reeval_sched_6mo", "Every six months"),
+            ("reeval_sched_12mo", "Every twelve months"),
+            ("reeval_sched_other", "Other schedule"),
         ],
     ),
     (

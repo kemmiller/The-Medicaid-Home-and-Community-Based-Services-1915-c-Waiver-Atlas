@@ -85,6 +85,25 @@ B1_COLUMNS = [
 # Appendix B-2: Individual Cost Limit
 B2_COLUMNS = [
     "cost_limit_pcntaboveinstit",
+    "cost_limit_instit",
+    "cost_limit_lowerinstit",
+]
+
+# Appendix B-6: Evaluation/Reevaluation of Level of Care
+# Split flags; collapsed to `local_eval`, `local_eval_instrument`, and
+# `reeval_sched` on output. `min_numservices` is emitted directly (text box).
+B6_COLUMNS = [
+    "min_numservices",
+    "local_eval_a",
+    "local_eval_b",
+    "local_eval_c",
+    "local_eval_d",
+    "local_eval_instrument_same",
+    "local_eval_instrument_diff",
+    "reeval_sched_3mo",
+    "reeval_sched_6mo",
+    "reeval_sched_12mo",
+    "reeval_sched_other",
 ]
 
 # Appendix B-3: Number of Individuals Served
@@ -1153,6 +1172,65 @@ class HTMLTopExtractor:
         return self._get_checkbox_value_by_id("svapdxB5_1:elgIncSpoImpRlsType:1")
 
     # =========================================================================
+    # APPENDIX B-6: EVALUATION / REEVALUATION OF LEVEL OF CARE
+    # =========================================================================
+
+    @property
+    def min_numservices(self) -> str:
+        """B-6-a-i: Minimum number of waiver services (text box)."""
+        return self._get_text_input_value_by_id("svapdxB6_1:elgEvalSvcMinQty")
+
+    @property
+    def local_eval_a(self) -> Optional[int]:
+        """B-6-b: Evaluations performed directly by the Medicaid agency."""
+        return self._get_checkbox_value_by_id("svapdxB6_1:elgEvalRespType:0")
+
+    @property
+    def local_eval_b(self) -> Optional[int]:
+        """B-6-b: Evaluations performed by the operating agency in Appendix A."""
+        return self._get_checkbox_value_by_id("svapdxB6_1:elgEvalRespType:1")
+
+    @property
+    def local_eval_c(self) -> Optional[int]:
+        """B-6-b: Evaluations performed by an entity under contract with the Medicaid agency."""
+        return self._get_checkbox_value_by_id("svapdxB6_1:elgEvalRespType:2")
+
+    @property
+    def local_eval_d(self) -> Optional[int]:
+        """B-6-b: Evaluations performed by an Other entity."""
+        return self._get_checkbox_value_by_id("svapdxB6_1:elgEvalRespType:3")
+
+    @property
+    def local_eval_instrument_same(self) -> Optional[int]:
+        """B-6-e: Same instrument used for waiver and institutional level of care."""
+        return self._get_checkbox_value_by_id("svapdxB6_1:elgEvalLOCInstType:0")
+
+    @property
+    def local_eval_instrument_diff(self) -> Optional[int]:
+        """B-6-e: Different instrument used for waiver vs. institutional level of care."""
+        return self._get_checkbox_value_by_id("svapdxB6_1:elgEvalLOCInstType:1")
+
+    @property
+    def reeval_sched_3mo(self) -> Optional[int]:
+        """B-6-g: Reevaluation every three months."""
+        return self._get_checkbox_value_by_id("svapdxB6_1:elgRevalSchType:0")
+
+    @property
+    def reeval_sched_6mo(self) -> Optional[int]:
+        """B-6-g: Reevaluation every six months."""
+        return self._get_checkbox_value_by_id("svapdxB6_1:elgRevalSchType:1")
+
+    @property
+    def reeval_sched_12mo(self) -> Optional[int]:
+        """B-6-g: Reevaluation every twelve months."""
+        return self._get_checkbox_value_by_id("svapdxB6_1:elgRevalSchType:2")
+
+    @property
+    def reeval_sched_other(self) -> Optional[int]:
+        """B-6-g: Reevaluation on other schedule."""
+        return self._get_checkbox_value_by_id("svapdxB6_1:elgRevalSchType:3")
+
+    # =========================================================================
     # MAIN EXTRACTION METHOD
     # =========================================================================
 
@@ -1235,6 +1313,28 @@ class HTMLTopExtractor:
 
         # Appendix B-5: Post-Eligibility Treatment
         data["spousal_impov_a"] = self.spousal_impov_a
+        data["spousal_impov_b"] = self.spousal_impov_b
+        data["spousal_impov_c"] = self.spousal_impov_c
+
+        # Appendix B-6: Level-of-Care Evaluation
+        data["min_numservices"] = self.min_numservices
+        data["local_eval_a"] = self.local_eval_a
+        data["local_eval_b"] = self.local_eval_b
+        data["local_eval_c"] = self.local_eval_c
+        data["local_eval_d"] = self.local_eval_d
+        data["local_eval_instrument_same"] = self.local_eval_instrument_same
+        data["local_eval_instrument_diff"] = self.local_eval_instrument_diff
+        data["reeval_sched_3mo"] = self.reeval_sched_3mo
+        data["reeval_sched_6mo"] = self.reeval_sched_6mo
+        data["reeval_sched_12mo"] = self.reeval_sched_12mo
+        data["reeval_sched_other"] = self.reeval_sched_other
+
+        # NOTE: split-flag → merged-column collapse is intentionally NOT
+        # called here. friend's downstream code (get_summary, merge
+        # pipeline) expects the split flags to remain. The collapse
+        # happens externally (planned in merge_extractions.py or a
+        # post-process script) so this extractor's contract is
+        # preserved.
 
         return data
 

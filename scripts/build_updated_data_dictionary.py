@@ -303,7 +303,7 @@ MERGES = [
         "values": (
             "1 = Directly by the Medicaid agency; "
             "2 = By the operating agency specified in Appendix A; "
-            "3 = By an entity under contract with the Medicaid agency; "
+            "3 = By a government agency under contract with the Medicaid agency; "
             "4 = Other"
         ),
         "short": "Who performs LOC evaluations (radio).",
@@ -396,6 +396,43 @@ MERGES = [
 ]
 
 
+# Brand-new variables that do not exist in the source dictionary yet (no
+# split-flag predecessors to merge from). Appended at the end of the
+# dictionary if the new_name is not already present.
+NEW_ENTRIES = [
+    {
+        "new_name":  "min_numservices",
+        "indicator": "Minimum number of waiver services required for an individual to be determined to need waiver services (Appendix B-6-a-i)",
+        "format":    "Text Box",
+        "values":    "Numeric (one or more)",
+        "short":     "Minimum number of services to qualify (text box).",
+        "long": (
+            "Free-text numeric entry from svapdxB6_1:elgEvalSvcMinQty. The state "
+            "specifies the minimum count of waiver services an individual must "
+            "require in the service plan in order to be determined to need waiver "
+            "services. Almost always '1' in the corpus."
+        ),
+    },
+    {
+        "new_name":  "reeval_sched",
+        "indicator": "Frequency of level-of-care reevaluations (Appendix B-6-g)",
+        "format":    "Radio Button",
+        "values": (
+            "1 = Every three months; "
+            "2 = Every six months; "
+            "3 = Every twelve months; "
+            "4 = Other schedule"
+        ),
+        "short": "Reevaluation schedule (radio).",
+        "long": (
+            "Merged radio variable from svapdxB6_1:elgRevalSchType. Emitted by "
+            "the PDF acroform extractor; HTML and text extractors produce this "
+            "via the radio-collapse layer over reeval_sched_3mo/_6mo/_12mo/_other."
+        ),
+    },
+]
+
+
 def apply_dictionary_revisions(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
 
@@ -430,6 +467,37 @@ def apply_dictionary_revisions(df: pd.DataFrame) -> pd.DataFrame:
         df = pd.concat(
             [upper, pd.DataFrame([new_row]), lower], ignore_index=True
         )
+
+    name_lower_series = df["Variable Name"].astype(str).str.strip().str.lower()
+    for entry in NEW_ENTRIES:
+        nm = entry["new_name"].lower()
+        mask = name_lower_series == nm
+        if mask.any():
+            # Row already exists (e.g. min_numservices in the All Variables
+            # sheet). Enrich blank cells but leave any user-set content alone.
+            idx = df.index[mask][0]
+            for src_key, col in (
+                ("indicator", "Indicator"),
+                ("format",    "Format"),
+                ("values",    "Values"),
+                ("short",     "Short Description"),
+                ("long",      "Long Description"),
+            ):
+                cur = df.at[idx, col]
+                if is_blank(cur):
+                    df.at[idx, col] = entry[src_key]
+            continue
+        new_row = {
+            "Variable Name":     entry["new_name"],
+            "Indicator":         entry["indicator"],
+            "Format":            entry["format"],
+            "Values":            entry["values"],
+            "Short Description": entry["short"],
+            "Long Description":  entry["long"],
+        }
+        df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
+        name_lower_series = df["Variable Name"].astype(str).str.strip().str.lower()
+
     return df
 
 

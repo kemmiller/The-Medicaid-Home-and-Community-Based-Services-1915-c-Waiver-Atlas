@@ -1,4 +1,346 @@
-TOP PRIORITIES
+======================================================================
+ACTIVE TASK BOARD                                       (2026-06-08)
+======================================================================
+Format: [PRIORITY] [STATUS] [DATE-OPENED] description
+        Priority bands: P0 (this week) | P1 (next sprint) | P2 | P3
+
+P0
+--
+[P0][TODO][2026-06-08] Pull origin/main, integrate friend's commits.
+        Notes: local working tree has 7 modified files + MISC extractor
+        untracked. Friend's commits on origin/main are unknown until a
+        fresh `git fetch` is run. See PIPELINE STATUS section for the
+        modules in play.
+        Blocked by: nothing — ready to execute on user authorization.
+
+[P0][TODO][2026-06-08] Stage + commit MISC extractor and supporting
+        changes (one logical commit; second commit for repo hygiene
+        like .gitignore for outputs/). Wait for user authorization
+        before `git commit`.
+
+P1
+--
+[P1][TODO][2026-06-08] Wire MISC into the orchestration pipeline as
+        Tier-4 fallback in run/run_extraction.py + merge/
+        merge_extractions.py. Precedence at merge time:
+        AcroForm > MISC > HTML > Text. Output schema = 161-var union.
+[P1][TODO][2026-06-08] Add `--misc_csv` flag to merge_extractions.py.
+[P1][TODO][2026-06-08] Backfill 89 dictionary rows for variables that
+        exist in extractors but not in the dictionary (see
+        DICTIONARY ALIGNMENT section).
+[P1][TODO][2026-06-08] Close the 4 case-only dict ↔ extractor
+        drifts (Approval_period, Replacedwaiver, Title,
+        waive_geographic_LIPD → lowercase per "codebase is canonical"
+        rule).
+
+P2
+--
+[P2][TODO][2026-06-08] Reconcile naming inconsistencies between
+        extractors:
+          - special_hcbs (HTML/Text)        → specialHCBS (canonical)
+          - phase_in_out_schedule (HTML/Text) → phaseinoutschedule
+          - sd_livarrngmnt_* (HTML)         → sd_livarrngmt_*
+          - sd_service_1 (HTML)             → sd_services (dict form)
+        See NAMING INCONSISTENCIES section for impact.
+[P2][TODO][2026-06-08] Fill the 74 dictionary-only vars (in dict but
+        no extractor produces them yet) — these are extractor coverage
+        gaps. Prioritize by dict's "Indicator" priority bands.
+[P2][TODO][2026-06-08] Regression-test pipeline integration: produce a
+        per-variable fill-rate delta report (pre-MISC vs post-MISC)
+        across the full 1,277-doc corpus.
+
+P3
+--
+[P3][RECURRING] Per-extractor coverage gap closure
+        - For each tier (Tier 1 HTML → Tier 4 MISC), work through its
+          "missing" list (PER-EXTRACTOR GAPS section) one variable at
+          a time
+        - Cadence: 2–3 vars per week
+        - Update the coverage matrix and dictionary atomically with
+          each addition
+
+
+======================================================================
+EXTRACTOR ARCHITECTURE                                  (2026-06-08)
+======================================================================
+Four tiers, in design order (oldest → newest), each used as a
+progressive fallback for the previous tier when its input is
+unavailable or unreadable. The pipeline currently runs Tiers 1–3
+(see PIPELINE STATUS); Tier 4 (MISC) is implemented but NOT yet
+wired into the orchestration code.
+
+  Tier 1  HTML extractor       (extractors/html_extractor/ +
+                                 extractors/secondary_extractor/)
+          Most comprehensive. Reads .htm/.html with form fields.
+          Covers all sections including Appendix E + I.
+
+  Tier 2  Text extractor       (extractors/text_extractor/)
+          Plain-text fallback. Mostly a subset of HTML core; cannot
+          parse Appendix E/I form fields.
+
+  Tier 3  PDF AcroForm extractor (extractors/pdf_acroform_extractor/)
+          Reads AcroForm field tokens (svgeninfo:*, svapdxXY_*).
+          Narrow set of authoritative merged radios.
+
+  Tier 4  MISC PDF extractor    (extractors/misc_extractor/)
+          Visual-geometry fallback for FLATTENED PDFs where AcroForm
+          tokens are absent. Calibrated on CO.0006.R06.00. Highest
+          variable count (151) because of full B-1/A-7 table walks.
+
+
+======================================================================
+VARIABLE COVERAGE MATRIX                                (2026-06-08)
+======================================================================
+H = HTML (incl. appendix E/I extractors)  |  T = Text top extractor
+A = PDF AcroForm extractor                 |  M = MISC PDF extractor
+1 = variable is emitted (after radio-collapse merge)  |  0 = absent
+
+Verified via introspection of @property defs + TARGET_VARIABLES +
+MISC.extract_all() on CO.0006.R06.00 (2026-06-08).
+
+  Counts: H=100  T=73  A=19  M=151  UNION=161
+  (HTML/Text counts post-collapse drop the split flags like
+   sd_election_1/2/3 and credit the merged column instead.)
+
+Enumerated groups are compressed (1 row per group; all members
+share the same H/T/A/M pattern):
+
+  variable / group                              H T A M  notes
+  --------------------------------------------------------------------
+  ma_1..12                                      0 0 0 1  Appx A-7 (MISC table)
+  osa_1..12                                     0 0 0 1  Appx A-7 (MISC table)
+  ce_1..12                                      0 0 0 1  Appx A-7 (MISC table)
+  inse_1..12                                    0 0 0 1  Appx A-7 (MISC table)
+  eligibility_1..12                             1 1 0 1  Appx B-4
+  eligibility_5_100                             1 1 0 1
+  eligibility_5_percent                         1 1 0 1
+  aged_group, aged_group_min, aged_group_max    1 1 0 1  Appx B-1
+  autism_group                                  1 1 0 1
+  braininjury_group                             1 1 0 1
+  dd_group                                      1 1 0 1
+  hivaids_group                                 1 1 0 1
+  id_group                                      1 1 0 1
+  medicallyfrail_group                          1 1 0 1
+  mi_group                                      1 1 0 1
+  otherdis_group                                1 1 0 1
+  physicaldis_group                             1 1 0 1
+  sed_group                                     1 1 0 1
+  techdep_group                                 1 1 0 1
+  target_groups                                 0 1 0 0  Text-only
+  numberofbenes_year1..5                        1 1 0 1  Appx B-3
+  max_numberofbenes_year1..5                    1 1 0 1
+  numberbenes_limited                           1 1 1 1
+  phaseinoutschedule                            0 0 1 1  ← canonical
+  phase_in_out_schedule                         1 1 0 0  ← drift (HTML/Text)
+  entrantselection                              1 1 0 1
+  hospital_loc, hospital_loc_limits             1 1 0 1
+  nursing_facility_loc, _limits                 1 1 0 1
+  ifc_loc, ifc_loc_limits                       1 1 0 1
+  concurrent_1115/1915a/1915b/1915i/1915j/1932a 1 1 0 1
+  dual_elg                                      1 1 0 1
+  approval_period                               1 1 1 1
+  effective_date                                1 1 0 1
+  waiver_type                                   1 1 0 1
+  program_title                                 0 0 0 1  MISC-only
+  title                                         1 1 0 0  legacy alias?
+  replacedwaiver                                1 1 0 0
+  participant_direction_offered                 1 0 0 0  HTML-only
+  selfdirection_yes                             0 0 1 1
+  selfdirection_description                     1 0 0 1
+  sd_authority                                  1 0 1 1
+  sd_election                                   1 0 1 1
+  sd_livarrngmt_1..3                            0 0 0 1  ← canonical
+  sd_livarrngmnt_1..3                           1 0 0 0  ← drift (HTML typo)
+  sd_coemployer                                 1 0 0 1
+  sd_commonlaw                                  1 0 0 1
+  sd_service_1                                  1 0 0 0  legacy; superseded by
+  sd_services                                   0 0 0 1  MISC dict form (E-1-g)
+  sd_fms_gov, sd_fms_pe                         1 0 0 1
+  scope_fms_1..4                                1 0 0 1
+  sd_numenrollees_ea1..5                        1 0 0 1
+  sd_numenrollees_ba1..5                        1 0 0 1
+  waive_1902a                                   1 1 1 1
+  waive_statewideness                           1 1 1 1
+  waive_geographic_limits                       1 1 0 1
+  waive_geographic_lipd                         1 1 0 1
+  costlimit                                     1 1 1 1
+  cost_limit_pcntaboveinstit                    1 1 0 1
+  specialHCBS                                   0 0 1 1  ← canonical
+  special_hcbs                                  1 1 0 0  ← drift (HTML/Text)
+  spousal_impov_a                               1 1 0 1
+  spousal_impov_bc                              1 1 1 1
+  local_eval                                    1 1 1 1
+  local_eval_instrument                         1 1 1 1
+  min_numservices                               1 1 1 1
+  reeval_sched                                  1 1 1 1
+  provider_rate_methods                         1 0 0 1
+  enhanced_payments_yes                         1 0 1 1
+  statecontracts_mcos                           0 0 1 1
+  payforresidential                             0 0 1 1
+  reimburse_paidcg                              0 0 1 1
+  document_id                                   0 0 0 1  bookkeeping key
+
+Full ungrouped matrix archived at: /tmp/_matrix.txt (161 rows).
+
+
+======================================================================
+PER-EXTRACTOR GAPS                                      (2026-06-08)
+======================================================================
+"Missing" = variable is in the UNION (some other extractor has it)
+but THIS extractor does not. Numbers in parens = count of missing
+vars in that section/group.
+
+HTML (missing 61 of 161 union):
+  - Appendix A-7 tables (48): ma_*, osa_*, ce_*, inse_* — MISC-only
+  - Naming-drift losses (3): phaseinoutschedule, specialHCBS,
+    sd_livarrngmt_* — HTML emits old names instead
+  - AcroForm/MISC scalars (10): payforresidential, reimburse_paidcg,
+    statecontracts_mcos, selfdirection_yes, sd_services,
+    program_title, document_id, plus a few B-section gaps
+
+Text (missing 88 of 161 union):
+  - Everything HTML is missing PLUS most of Appendix E + I
+  - Notable gaps: sd_authority, sd_election, selfdirection_*,
+    sd_coemployer, sd_commonlaw, sd_fms_*, scope_fms_*,
+    sd_numenrollees_*, sd_service_1, sd_services,
+    provider_rate_methods, enhanced_payments_yes
+  - Reason: most of E/I are HTML form-field driven and have no
+    plain-text equivalent in the .txt rendition
+
+AcroForm (missing 142 of 161 union):
+  - Has only 19 vars by design — covers merged radios + a few
+    scalars where AcroForm fields are reliable
+  - Big gaps: ALL of Appendix A-7/B-1/B-3/B-4 tables, ALL of
+    Appendix E enumerated keys, plus most B-2/B-5 etc. that other
+    extractors handle via text or geometry
+
+MISC (missing 10 of 161 union):
+  - HTML-only legacies (5): phase_in_out_schedule, replacedwaiver,
+    sd_livarrngmnt_1/2/3 (typo'd duplicates of MISC's
+    sd_livarrngmt_*), sd_service_1, title, special_hcbs,
+    target_groups, participant_direction_offered
+  - All 10 are old/drift names — MISC already covers their
+    canonical-named equivalents
+
+
+======================================================================
+PER-EXTRACTOR UNIQUE COVERAGE                           (2026-06-08)
+======================================================================
+"Unique" = ONLY this extractor emits the variable.
+
+HTML uniquely covers (4):
+  - participant_direction_offered    (legacy alias of selfdirection_yes?)
+  - sd_livarrngmnt_1/2/3             (typo drift; MISC has the canonical
+                                       sd_livarrngmt_* — should retire)
+  - sd_service_1                      (CSV-string form; superseded by MISC's
+                                       sd_services dict — should retire)
+
+Text uniquely covers (1):
+  - target_groups                     (likely a Text-specific aggregate
+                                       column; needs investigation)
+
+AcroForm uniquely covers (0):
+  All AcroForm vars are also in MISC (which makes sense — MISC was
+  built as the fallback for the same variables when AcroForm tokens
+  are absent).
+
+MISC uniquely covers (53):
+  - ma_1..12, osa_1..12, ce_1..12, inse_1..12  (48 Appx A-7 cells)
+  - program_title                              (text scalar)
+  - sd_services                                 (dict form of sd_service_*)
+  - sd_livarrngmt_1..3                          (canonical of HTML's typo)
+  - document_id                                 (bookkeeping key)
+
+
+======================================================================
+DICTIONARY ALIGNMENT                                    (2026-06-08)
+======================================================================
+docs/1915C_Data_Dictionary_Updated.xlsx is the canonical spec.
+Sheet `All Variables` has 168 rows.
+
+Comparison vs. the 161-var extractor UNION:
+
+  In BOTH (well-aligned)                       : 94
+  In extractors but NOT in dict (add to dict)  : 89
+  In dict but NOT in extractors (build code)   : 74
+  Case-only mismatches                         : 4
+
+Case-only mismatches (rename DICT to match codebase per user rule):
+  Approval_period         → approval_period
+  Replacedwaiver          → replacedwaiver
+  Title                   → title
+  waive_geographic_LIPD   → waive_geographic_lipd
+
+The 89 "extractors-but-not-in-dict" backlog needs concrete dict
+entries with: Indicator (Priority), Format (data type), Values
+(option labels), Short Description, Long Description, In Dataset?
+(presence flag), Inferred Type.
+
+The 74 "dict-but-not-in-extractors" backlog is the actual coverage
+goal — these are the variables we should be building extraction for
+next. Cross-reference against the LEGACY FILL-RATE BASELINE section
+below to prioritize the high-traffic ones.
+
+
+======================================================================
+NAMING INCONSISTENCIES                                  (2026-06-08)
+======================================================================
+Production-blocking drifts that will cause silent column-mismatch
+bugs at merge time:
+
+  Concept                      HTML/Text emit          Canonical (3 of 4 extractors agree)
+  --------------------------------------------------------------------
+  Special HCBS group           special_hcbs            specialHCBS
+  Phase-in/out schedule        phase_in_out_schedule   phaseinoutschedule
+  Living arrangement (E-1-c)   sd_livarrngmnt_1..3     sd_livarrngmt_1..3 (typo drift)
+  Participant-direction        participant_direction_offered (HTML only)  selfdirection_yes (rest)
+  Service list (E-1-g)         sd_service_1 (CSV string)     sd_services (MISC dict)
+
+Resolution: rename HTML/Text emissions to the canonical name per
+the user-stated rule "Code base naming conventions are accurate.
+lets stick to that in the dictionary too". Implementation goes
+through extractors/_radio_collapse.py for the collapsed names and
+via direct @property renames for HTML/Text scalars.
+
+
+======================================================================
+PIPELINE STATUS                                         (2026-06-08)
+======================================================================
+Orchestration entrypoints:
+  run/run_extraction.py        — runs HTML or Text per --mode flag
+  merge/merge_extractions.py   — field-level merge of HTML + Text;
+                                 AcroForm optional via --pdf_csv
+  scripts/misc_coverage_analysis.py — STANDALONE (not in pipeline);
+                                 only used for MISC vs baseline
+                                 benchmarking
+
+What's wired:
+  HTML extractor       → run_extraction.py --mode html
+  Text extractor       → run_extraction.py --mode text
+  Merge HTML + Text    → merge_extractions.py (default)
+  AcroForm merge       → merge_extractions.py --pdf_csv (manual)
+
+What's NOT wired (GAPS):
+  MISC                 → not called by any pipeline script
+  AcroForm auto-detect → must be invoked manually
+  No end-to-end orchestrator producing the final `1915c-waiver-
+    level.csv` referenced in older TODOs; that file appears to be
+    externally generated
+
+Target pipeline state after Phase 3 (see ACTIVE TASK BOARD):
+  run_all.py (new) orchestrates HTML → Text → AcroForm → MISC and
+  emits a single merged CSV at outputs/1915c-waiver-level.csv with
+  the 161-var union schema, applying the AcroForm > MISC > HTML >
+  Text precedence at each cell.
+
+
+======================================================================
+LEGACY FILL-RATE BASELINE  (1,277-doc corpus, pre-MISC pipeline)
+======================================================================
+Per-variable fill rates from the baseline HTML+Text merge over the
+1,277-document corpus (the friend's earlier extraction run, before
+MISC integration). Use this to prioritize which gaps in
+PER-EXTRACTOR GAPS / DICTIONARY ALIGNMENT to close first.
 
 ======================================================================
 Request information (1 of 3)
@@ -299,6 +641,389 @@ REMAINING TODOs
 4. Service-level extractor parity: confirm whether any merged radios
    from this set apply to the service-level dataset.
 
+APPENDIX B-6 BACK-PORT (2026-06-04)
+-----------------------------------
+Four B-6 variables were added to the MISC extractor
+(extractors/misc_extractor/misc_pdf_extractor.py) and now need to be
+back-ported to the structured-form extractors. Two of them are brand
+new across the codebase; two extend existing radio sets.
+
+NEW VARIABLES (not present in any extractor before MISC):
+- min_numservices  [Text Box, B-6-a-i]
+    "The minimum number of waiver services (one or more) that an
+    individual must require ... is: <value>". CO sample value: "1".
+    Needs:
+      * pdf_acroform_extractor.py — add TARGET_VARIABLES entry; find
+        AcroForm field name in a newer flattened-but-acroform PDF.
+      * html_top_extractor.py     — add text-pattern extraction.
+      * text_top_extractor.py     — add text-pattern extraction.
+      * scripts/build_updated_data_dictionary.py — add dictionary
+        entry (Text Box, B-6-a-i).
+- reeval_sched     [Radio Button, 4 options, B-6-g]
+    Options: "Every three months" / "Every six months" / "Every twelve
+    months" / "Other schedule". CO sample: "Every twelve months".
+    Needs:
+      * pdf_acroform_extractor.py — add TARGET_VARIABLES entry +
+        AcroForm radio-group mapping.
+      * html_top_extractor.py     — add split flags + collapse to
+        merged reeval_sched (mirror local_eval pattern).
+      * text_top_extractor.py     — add text-pattern extraction.
+      * _radio_collapse.py        — add reeval_sched collapse rule.
+      * scripts/build_updated_data_dictionary.py — add dictionary
+        entry (Radio Button, 4 options).
+
+EXISTING VARIABLES (already in pdf_acroform/html, MISC now also
+populates them; text extractor TODO at text_top_extractor.py:1282
+covers these):
+- local_eval            [Radio Button, 4 options, B-6-b]
+- local_eval_instrument [Radio Button, 2 options, B-6-e]
+
+CALIBRATION NOTE: local_eval option 3 has two valid template wordings
+across the corpus. CO.0006.R06.00 renders it as "By an entity under
+contract with the Medicaid agency."; newer templates use "By a
+government agency under contract with the Medicaid agency." The MISC
+extractor accommodates both via separate anchors and returns whichever
+wording is literally in the source PDF (i.e. data fidelity is
+preserved — no normalization). HTML/text back-ports should mirror this
+two-wording acceptance.
+
+DEFERRED B-6 SUBSECTIONS (not in MISC yet, candidates for future):
+- B-6-a-ii Frequency of services (2-option radio + optional free-text
+  "specify the frequency:").
+- B-6-c, d, f, i, j: free-text fields.
+- B-6-h: "qualifications same/different" radio (2 options).
+
+APPENDIX E-1 (2026-06-05)
+-------------------------
+Six E-1 variables added to MISC
+(extractors/misc_extractor/misc_pdf_extractor.py):
+- selfdirection_description  [free text,  E-1-a]
+- sd_authority               [radio 3-opt, E-1-b]
+- sd_livarrngmt_1/2/3        [checkboxes,  E-1-c]
+- sd_election                [radio 3-opt, E-1-d]
+
+Status in other extractors:
+- sd_authority / sd_election : already populated via the AcroForm token
+  hints (pdf_acroform_extractor.py) and via HTML/text split-flag
+  collapse (_radio_collapse.py:60-75). MISC returns the same canonical
+  short labels for cross-extractor consistency.
+- selfdirection_description  : present in html_appendix_e_extractor.py
+  (HTML/textarea path) but NOT in pdf_acroform / html_top / text_top.
+  Back-port targets:
+    * pdf_acroform_extractor.py — text-box support is still missing
+      (same gap noted in the B-6 back-port for min_numservices).
+    * html_top_extractor.py     — add property; HTML textarea read.
+    * text_top_extractor.py     — add regex-anchored multi-paragraph
+      extraction mirroring MISC (anchor "...waiver's approach to
+      participant direction." → next "E-1: Overview (2 of 13)").
+- sd_livarrngmt_1/2/3        : present in html_appendix_e_extractor.py
+  but NOT in pdf_acroform / html_top / text_top. Back-port targets
+  same as above (all three are simple checkboxes).
+
+DICTIONARY ADDITIONS NEEDED (in scripts/build_updated_data_dictionary.py):
+- selfdirection_description  (Free Text, Appendix E-1-a)
+- sd_livarrngmt_1/2/3        (Check Box, Appendix E-1-c) — three rows.
+- Verify the existing sd_authority and sd_election rows match
+  _radio_collapse.py's short canonical labels; if the dictionary
+  currently uses the verbose CMS-template wording, harmonize.
+
+CALIBRATION NOTES (CO.0006.R06.00):
+- The E-1-a prompt sentence wraps across line breaks ("...waiver's
+  approach to" / "participant direction.") — MISC uses \\s+ word
+  separators in the start-anchor regex to tolerate the wrap.
+- pypdf rendering between pages 118 and 119 inserts the page header
+  "Appendix E: Participant Direction of Services" mid-text. MISC's
+  _E1_FOOTER_RE filters that line along with the page-number,
+  application title, print URL, and date stamp.
+- The selfdirection_description end-anchor is "E-1: Overview (2 of
+  13)" rather than "b. Participant Direction Opportunities" — in the
+  pypdf-extracted layout, the next-page header arrives before the
+  subsection heading.
+
+APPENDIX E-1-g / E-1-h (2026-06-05)
+-----------------------------------
+Three E-1 variables added to MISC
+(extractors/misc_extractor/misc_pdf_extractor.py):
+- sd_services     [dict-valued sub-table, E-1-g]
+    Single column. Value is dict[service_name, dict[ea|ba, 0/1]],
+    preserving row order. Variable row count handled inside the cell
+    so the CSV column schema is stable across docs.
+- sd_fms_gov      [checkbox, E-1-h]
+- sd_fms_pe       [checkbox, E-1-h]
+
+Status in other extractors:
+- All three already exist in
+  extractors/secondary_extractor/html_appendix_e_extractor.py (HTML
+  path). NOT in pdf_acroform_extractor / html_top_extractor /
+  text_top_extractor / _radio_collapse / build_updated_data_dictionary.
+- Back-port targets for all three: pdf_acroform_extractor.py (would
+  need AcroForm field-name discovery for the variable-row table —
+  non-trivial), html_top_extractor.py, text_top_extractor.py.
+
+FORMAT DIVERGENCE NOTE:
+- html_appendix_e_extractor.py:286 emits `sd_service_1` as a single
+  comma-separated string of service names with no EA/BA flags. MISC's
+  `sd_services` is structurally richer (dict with checkbox states per
+  service). Either rework the HTML appendix-E extractor to emit the
+  same dict shape, or normalize at the analysis layer.
+
+DICTIONARY ADDITIONS NEEDED (in scripts/build_updated_data_dictionary.py):
+- sd_services (Sub-Table, value type = dict[str, dict[str, int]], no
+  enumerated split columns)
+- sd_fms_gov (Check Box, Appendix E-1-h)
+- sd_fms_pe  (Check Box, Appendix E-1-h)
+
+CALIBRATION NOTES (CO.0006.R06.00, page 122):
+- Section bounds use the page-header anchors "E-1: Overview (6 of 13)"
+  → "(7 of 13)" → "(8 of 13)". The "Participant-Directed Services"
+  phrase as a section start fails because "Waiver Service" appears
+  earlier in Appendix C; the page-header trio is unambiguous.
+- E-1-g column header line is rendered as TWO visual lines: "Waiver
+  Service" on its own, then "Employer Authority  Budget Authority".
+  The current extractor finds the header by looking for the line
+  containing BOTH "Employer Authority" and "Budget Authority".
+- Service-name labels in CO start at x≈86 (NOT 140+); the row x-window
+  uses the EA column header x as the upper bound (label_x_upper =
+  ea_x - 20) instead of a hardcoded number.
+- E-1-h checkbox rows are tightly stacked (~2 px gap between the
+  Gov-box bottom and the Private-label top). MISC overrides the
+  default `_detect_left_checkbox` y_tol to 2.0 (down from 4.0) so a
+  given label only matches its own row's box. Default 4.0 lets either
+  box match either label.
+
+DEFERRED FOLLOW-UPS:
+- Multi-line service labels: v1 captures only the first visual line
+  per row. If a future PDF wraps a long service name across two
+  lines, the second line becomes a ghost row with no checkboxes.
+  Fix is to detect rows with no EA/BA hits and merge into prior row.
+
+APPENDIX E-1-i SCOPE OF FMS (2026-06-05)
+----------------------------------------
+Four E-1 (8 of 13) checkbox variables added to MISC
+(extractors/misc_extractor/misc_pdf_extractor.py via
+_extract_scope_fms):
+- scope_fms_1 — Assist participant in verifying support worker
+  citizenship status
+- scope_fms_2 — Collect and process timesheets of support workers
+- scope_fms_3 — Process payroll, withholding, filing and payment of
+  applicable federal, state and local employment-related taxes and
+  insurance
+- scope_fms_4 — Other
+
+Status in other extractors:
+- Already in extractors/secondary_extractor/html_appendix_e_extractor.py
+  (lines 331–360) with CMS field IDs
+  svapdxE1_8:dosFMSAdmEmpCitz / EmpTime / EmpPay / EmpOth.
+- NOT in pdf_acroform_extractor.py, html_top_extractor.py,
+  text_top_extractor.py, _radio_collapse.py, or
+  scripts/build_updated_data_dictionary.py. Back-port to all three
+  top-level extractors + add dictionary rows.
+
+DICTIONARY ADDITIONS NEEDED:
+- scope_fms_1 / 2 / 3 / 4 — Check Box, Appendix E-1-i-iii.
+
+CALIBRATION NOTES (CO.0006.R06.00):
+- Section bounded by page-header anchors "E-1: Overview (8 of 13)"
+  → "(9 of 13)". Section spans 4 PDF pages (122–125 in this sample);
+  labels themselves sit on pages 123–124 split by the page boundary.
+- scope_fms_1 and scope_fms_2 boxes are tightly stacked on page 123
+  (~3 px gap between scope_fms_1 box bottom and scope_fms_2 label
+  top). Generic _detect_left_checkbox with default y_tol=4 would let
+  either box match either label. The inline section-walking
+  implementation uses a y±2 overlap filter and picks the box with
+  the smallest y-center distance from the label center.
+- scope_fms_4 is the bare word "Other" which appears in many other
+  parts of the document — section scoping is mandatory here.
+
+APPENDIX E-1-n GOALS YEAR TABLE (2026-06-05)
+--------------------------------------------
+Ten E-1 (13 of 13) numeric/text variables added to MISC via
+_extract_e1n_year_table:
+- sd_numenrollees_ea1..5  (Employer Authority Only — Year 1..5)
+- sd_numenrollees_ba1..5  (Budget Authority Only OR BA + EA
+                           combination — Year 1..5)
+
+All emitted as strings (matching the existing numberofbenes_year*
+convention); empty cell ⇒ "".
+
+Status in other extractors:
+- Already in extractors/secondary_extractor/html_appendix_e_extractor.py
+  (lines 367–414) via AcroForm field IDs
+  svapdxE1_13:dosGlsEmpYr{N}Qty / dosGlsBudYr{N}Qty.
+- NOT in pdf_acroform_extractor.py, html_top_extractor.py,
+  text_top_extractor.py, _radio_collapse.py, or
+  scripts/build_updated_data_dictionary.py. Back-port to all three
+  top-level extractors + add 10 dictionary rows.
+
+DICTIONARY ADDITIONS NEEDED:
+- sd_numenrollees_ea1..5 / sd_numenrollees_ba1..5 — Free-Text /
+  Numeric, Appendix E-1-n. 10 rows.
+
+CALIBRATION NOTES (CO.0006.R06.00, page 127):
+- Anchored on "Table E-1-n" heading (page-header
+  "E-1: Overview (13 of 13)" doesn't always render as a clean fitz
+  span on this page).
+- Section_end = "E-2: Opportunities for Participant Direction".
+- Year-label x-window: x ≤ 135 (label at x≈97).
+- EA value x-window: 140..250 (header at x≈145..231, value cells
+  centered around x≈188 when filled).
+- BA value x-window: 260..540 (header at x≈262..539, value cells
+  in CO at x≈338..358 — "3324").
+- CO sample has EA column blank for all 5 years; BA column = "3324"
+  for all 5 years.
+
+APPENDIX E-2-a-i EMPLOYER STATUS (2026-06-05)
+---------------------------------------------
+Two independent E-2 (1 of 6) checkbox variables added to MISC
+(extractors/misc_extractor/misc_pdf_extractor.py):
+- sd_coemployer  — "Participant/Co-Employer." checkbox
+- sd_commonlaw   — "Participant/Common Law Employer." checkbox
+
+"Select one or both" — these are NOT a radio group, so no entry in
+_radio_collapse.py.
+
+Status in other extractors:
+- Already in extractors/secondary_extractor/html_appendix_e_extractor.py
+  (lines 421, 430) via AcroForm field IDs
+  svapdxE2_1:dosPtcEmpCoemp / dosPtcEmpComLaw.
+- NOT in pdf_acroform_extractor.py, html_top_extractor.py,
+  text_top_extractor.py, or
+  scripts/build_updated_data_dictionary.py. Back-port to all three
+  top-level extractors + add 2 dictionary rows.
+
+DICTIONARY ADDITIONS NEEDED:
+- sd_coemployer / sd_commonlaw — Check Box, Appendix E-2-a-i.
+  Independent flags (not collapsed).
+
+CALIBRATION NOTES (CO.0006.R06.00, page 127):
+- Both labels are unique spans in the document (verified by probe),
+  so _detect_left_checkbox's first-match-on-page rule is safe; no
+  section scoping needed.
+- The label arg includes the trailing period to match the literal
+  span text " Participant/Co-Employer. " / " Participant/Common Law
+  Employer. " after the helper's strip+lower normalization.
+- Boxes are ~170 px apart vertically — default y_tol=4 is fine
+  (no tight-row issue like sd_fms_gov/pe or scope_fms_1/2).
+
+APPENDIX I (2026-06-05)
+-----------------------
+Two Appendix-I variables added to MISC:
+- provider_rate_methods   [free text, Appendix I-2-a]
+- enhanced_payments_yes   [radio 0/1, Appendix I-3-c]
+
+Status in other extractors:
+- provider_rate_methods: present in
+  extractors/secondary_extractor/html_appendix_i_rates_extractor.py
+  (HTML/textarea path). NOT in pdf_acroform_extractor,
+  html_top_extractor, or text_top_extractor. Back-port to all three.
+- enhanced_payments_yes: present in
+  extractors/pdf_acroform_extractor/pdf_acroform_extractor.py
+  (token svapdxI3_3:fnaPymtSppl, Optional[int]) and in
+  html_appendix_i_rates_extractor.py. NOT in html_top_extractor or
+  text_top_extractor. Not in _radio_collapse.py (it's a single-int
+  flag, no split-flag collapse needed). Back-port to html_top +
+  text_top.
+
+NAMING: enhanced_payments_yes is the canonical name (single int
+flag where 1 = "Yes" option selected). No alternates like
+enhanced_payments_no / supplementalPayments exist in the repo.
+MISC matches pdf_acroform's int contract for downstream parity.
+
+DICTIONARY ADDITIONS NEEDED:
+- provider_rate_methods  (Free Text, Appendix I-2-a)
+- enhanced_payments_yes  (Radio Button, Appendix I-3-c)
+
+CALIBRATION NOTES (CO.0006.R06.00):
+- provider_rate_methods body spans pages 169–170. CO sample's
+  text begins "Elderly, Blind and Disabled Waiver rates are
+  established by the Single State Agency..." and ends with the
+  CDASS reimbursement paragraph just before "b. Flow of Billings".
+- pypdf renders the I-2 page-boundary footer/header as MERGED
+  single lines: "Page 170 of 189Application for 1915(c) HCBS
+  Waiver: ..." and "7/5/2018https://wms-mmdl...". These differ
+  from the E-1 case (where each line was rendered separately).
+  The module-level _PRINT_FOOTER_RE (formerly _E1_FOOTER_RE) was
+  extended to handle both isolated AND merged variants. The same
+  constant is shared with selfdirection_description.
+- enhanced_payments_yes uses _detect_vertical_radio with
+  section_start="c. Supplemental or Enhanced Payments" and
+  section_end="d. Payments to State or Local Government Providers"
+  (the next subsection within I-3). CO sample: option 1 ("No")
+  selected → returns 0.
+
+APPENDIX I-3 (7 of 7) iii. (2026-06-05)
+---------------------------------------
+One Appendix-I-3 variable added to MISC:
+- statecontracts_mcos  [radio str, Appendix I-3-g-iii]
+
+Status in other extractors:
+- Already in extractors/pdf_acroform_extractor/pdf_acroform_extractor.py
+  (lines 129-133, token svapdxI3_7:fnaPymtPHP) with the canonical
+  option-label strings stored at lines 446-455. Returns a string
+  (full canonical label, not a 0/1 flag).
+- Already in scripts/build_updated_data_dictionary.py:374-393
+  (consolidates legacy statecontracts_mcos1..4 columns into a single
+  statecontracts_mcos with 5 options).
+- NOT in extractors/html_top_extractor.py or
+  extractors/text_top_extractor.py. Back-port to those two.
+- Not a _radio_collapse.py candidate (single canonical-string column,
+  not a split-flag group).
+
+CALIBRATION NOTES (CO.0006.R06.00, pages 174-175):
+- Section spans 2 pages: options 1 + 2 on page 174 (y≈563, y≈578),
+  options 3 + 4 on page 175 (y≈57, y≈105). Option 5 absent in CO.
+- Page 174 option 3 renders "concurrent §1915(b)/§1915(c) waiver"
+  with § preserved as U+00A7. Page 175 option 4 renders
+  "concurrent ଛ1115/ଛ1915(c) waiver" — the § glyph is corrupted to
+  Odia U+0B1B (ଛ) in CO's PDF. Other templates may render it as "?"
+  or other glyphs.
+- To dodge the encoding issue, options 3 and 4 anchor on
+  "1915(b) waiver specifies" / "1115 waiver specifies" — fragments
+  AFTER the § that exist in every encoding variant.
+- Returned labels use lowercase "state" (verbatim match to the
+  pdf_acroform canonical strings) even though the PDF renders
+  capital "State" — case-insensitive matching in
+  _detect_vertical_radio handles the anchor side.
+
+APPENDIX I-5 + I-6 BINARY RADIOS (2026-06-05)
+---------------------------------------------
+Two binary-radio Appendix-I variables added to MISC:
+- payforresidential   [int 0/1, Appendix I-5-a]
+- reimburse_paidcg    [int 0/1, Appendix I-6]
+
+NAMING: user proposed `paysforresid` for I-5; resolved to the
+existing codebase name `payforresidential` (pdf_acroform AcroForm
+field svapdxI5_1:fnaNonPerResSvc) per the same precedent as
+numberofbenes_*, local_eval.
+
+Status in other extractors:
+- payforresidential: already in
+  extractors/pdf_acroform_extractor/pdf_acroform_extractor.py
+  (token svapdxI5_1:fnaNonPerResSvc, csv_transform
+  residential_services_binary → 0/1). NOT in html_top, text_top,
+  or _radio_collapse.py. Back-port to html_top + text_top.
+- reimburse_paidcg: already in
+  extractors/pdf_acroform_extractor/pdf_acroform_extractor.py
+  (token svapdxI6_1:fnaFFP, csv_transform yes_no_binary → 0/1).
+  NOT in html_top, text_top, or _radio_collapse.py. Back-port
+  to html_top + text_top.
+
+DICTIONARY: verify rows exist in
+scripts/build_updated_data_dictionary.py — both are binary Radio
+Button entries (Appendix I-5-a and Appendix I-6).
+
+CALIBRATION NOTES (CO.0006.R06.00):
+- payforresidential at page 176. CO sample selects option 2 ("As
+  specified in Appendix C, the State furnishes...") → returns 1.
+  Row spacing ~25 px — default y_tol fine.
+- reimburse_paidcg at page 177. CO sample selects option 1 ("No.
+  The State does not reimburse...") → returns 0. Option 2 text
+  contains "§441.310(a)(2)(ii)" — fitz probe confirms § renders
+  correctly here (no Odia corruption like statecontracts_mcos
+  option 4). Default anchor matching works.
+- Both follow the same "yes"/"no" sentinel + int translation
+  pattern as enhanced_payments_yes.
+
 
 PROMPTING STRATEGIES
 --------------------
@@ -462,3 +1187,23 @@ We will expand to the full QC set ONLY after CO0006R0600 passes cleanly and a re
   MT0148R0602
   NC0132R0700
   PA0386R0300
+
+======================================================================
+MISC EXTRACTOR — CALIBRATION FOLLOW-UPS (2026-05-20)
+======================================================================
+
+- _checkbox_filled_by_pixels uses a 5% dark-pixel fill_ratio_threshold,
+  calibrated only against CO.0006.R06.00 (separation was clean: 48.3%
+  for the checked dual_elg vs 0.000% for the six unchecked concurrent_*
+  boxes). When the next flattened sample lands (e.g. LA.0866 from the
+  visual-radio priority list, or any other PDF where checkboxes look
+  visually faint), re-measure and retune. If a future template uses
+  light-grey check-marks the threshold may need to drop, or we may need
+  to switch to a connected-component count instead of raw density.
+
+- _detect_vertical_radio currently picks the single closest outer ring
+  per anchor and looks for an inner-fill contained inside it. Tuned on
+  CO.0006.R06.00 selfdirection_yes / waive_1902a / waive_statewideness.
+  When a future flattened doc has tighter vertical spacing or different
+  inner-fill sizes, the {outer_min, outer_max, inner_min, inner_max,
+  ring_y_distance_max} constants may need adjustment.

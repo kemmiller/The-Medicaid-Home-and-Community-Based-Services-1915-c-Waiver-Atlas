@@ -32,4 +32,5 @@ env/
 *.html
 data/
 output/
+outputs/
 analysis/
