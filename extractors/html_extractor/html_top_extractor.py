@@ -99,14 +99,20 @@ B2_COLUMNS = [
 ]
 
 # Appendix B-6: Evaluation/Reevaluation of Level of Care
-# Split flags; collapsed to `local_eval` and `local_eval_instrument` on output.
+# Split flags; collapsed to `local_eval`, `local_eval_instrument`, and
+# `reeval_sched` on output. `min_numservices` is emitted directly (text box).
 B6_COLUMNS = [
+    "min_numservices",
     "local_eval_a",
     "local_eval_b",
     "local_eval_c",
     "local_eval_d",
     "local_eval_instrument_same",
     "local_eval_instrument_diff",
+    "reeval_sched_3mo",
+    "reeval_sched_6mo",
+    "reeval_sched_12mo",
+    "reeval_sched_other",
 ]
 
 # Appendix B-3: Number of Individuals Served
@@ -780,6 +786,11 @@ class HTMLTopExtractor:
     # =========================================================================
 
     @property
+    def min_numservices(self) -> str:
+        """B-6-a-i: Minimum number of waiver services (text box)."""
+        return self._get_text_input_value_by_id("svapdxB6_1:elgEvalSvcMinQty")
+
+    @property
     def local_eval_a(self) -> Optional[int]:
         """B-6-b: Evaluations performed directly by the Medicaid agency."""
         return self._get_checkbox_value_by_id("svapdxB6_1:elgEvalRespType:0")
@@ -808,6 +819,26 @@ class HTMLTopExtractor:
     def local_eval_instrument_diff(self) -> Optional[int]:
         """B-6-e: Different instrument used for waiver vs. institutional level of care."""
         return self._get_checkbox_value_by_id("svapdxB6_1:elgEvalLOCInstType:1")
+
+    @property
+    def reeval_sched_3mo(self) -> Optional[int]:
+        """B-6-g: Reevaluation every three months."""
+        return self._get_checkbox_value_by_id("svapdxB6_1:elgRevalSchType:0")
+
+    @property
+    def reeval_sched_6mo(self) -> Optional[int]:
+        """B-6-g: Reevaluation every six months."""
+        return self._get_checkbox_value_by_id("svapdxB6_1:elgRevalSchType:1")
+
+    @property
+    def reeval_sched_12mo(self) -> Optional[int]:
+        """B-6-g: Reevaluation every twelve months."""
+        return self._get_checkbox_value_by_id("svapdxB6_1:elgRevalSchType:2")
+
+    @property
+    def reeval_sched_other(self) -> Optional[int]:
+        """B-6-g: Reevaluation on other schedule."""
+        return self._get_checkbox_value_by_id("svapdxB6_1:elgRevalSchType:3")
 
     # =========================================================================
     # MAIN EXTRACTION METHOD
@@ -908,15 +939,21 @@ class HTMLTopExtractor:
         data["spousal_impov_c"] = self.spousal_impov_c
 
         # Appendix B-6: Level-of-Care Evaluation
+        data["min_numservices"] = self.min_numservices
         data["local_eval_a"] = self.local_eval_a
         data["local_eval_b"] = self.local_eval_b
         data["local_eval_c"] = self.local_eval_c
         data["local_eval_d"] = self.local_eval_d
         data["local_eval_instrument_same"] = self.local_eval_instrument_same
         data["local_eval_instrument_diff"] = self.local_eval_instrument_diff
+        data["reeval_sched_3mo"] = self.reeval_sched_3mo
+        data["reeval_sched_6mo"] = self.reeval_sched_6mo
+        data["reeval_sched_12mo"] = self.reeval_sched_12mo
+        data["reeval_sched_other"] = self.reeval_sched_other
 
         # Collapse split radio flags into merged categorical columns
-        # (costlimit, spousal_impov_bc, local_eval, local_eval_instrument).
+        # (costlimit, spousal_impov_bc, local_eval, local_eval_instrument,
+        # reeval_sched).
         data = collapse_radio_groups(data)
 
         return data

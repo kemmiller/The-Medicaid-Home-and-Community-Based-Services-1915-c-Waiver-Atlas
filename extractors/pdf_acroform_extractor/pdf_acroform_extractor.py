@@ -53,7 +53,9 @@ logging.getLogger("pypdf").setLevel(logging.ERROR)
 #                 1915c waiver-level dataset CSV — see csv_columns_not_in_pipeline.txt).
 #   token_hints   list of token prefixes; lookup tries each in order, first hit wins.
 #                 Match rule: token == hint  OR  token == hint + '_<digits>'
-#   select_type   'single' (radio) or 'multi' (independent checkboxes — none here today).
+#   select_type   'single' (radio), 'multi' (independent checkboxes — none here today),
+#                 or 'text' (free-text AcroForm field — reads /V directly,
+#                 falls back to the TXT-corpus label if the field is missing).
 #   csv_transform None (emit selected label as-is) or one of:
 #                   'yes_no_binary'  -> ordinal 0 ("No...") -> 0, 1 ("Yes...") -> 1.
 
@@ -141,6 +143,20 @@ TARGET_VARIABLES: list[dict[str, Any]] = [
         # Appendix B-6-e: Level of Care Instrument(s) — same vs different instrument.
         "output_col":    "local_eval_instrument",
         "token_hints":   ["svapdxB6_1:elgEvalLOCInstType"],
+        "select_type":   "single",
+        "csv_transform": None,
+    },
+    {
+        # Appendix B-6-a-i: Minimum number of waiver services (text box).
+        "output_col":    "min_numservices",
+        "token_hints":   ["svapdxB6_1:elgEvalSvcMinQty"],
+        "select_type":   "text",
+        "csv_transform": None,
+    },
+    {
+        # Appendix B-6-g: Reevaluation Schedule (4-option radio).
+        "output_col":    "reeval_sched",
+        "token_hints":   ["svapdxB6_1:elgRevalSchType"],
         "select_type":   "single",
         "csv_transform": None,
     },
@@ -587,10 +603,20 @@ def resolve_and_extract(doc_id: str, target_var: dict, var_token_map: dict,
 
     match = var_token_map.get((doc_id, col))
     if match is None:
-        fb = _try_visual_fallback("token_not_found")
-        if fb is not None:
-            return fb
-        return {"value": None, "status": "token_not_found", "error_flag": False}
+        # For text fields, the AcroForm field name is fully specified in
+        # token_hints — no TXT-corpus label lookup is required. Try direct
+        # field lookup before failing.
+        if select_type == "text" and cached_fields is not None:
+            for hint in target_var["token_hints"]:
+                if hint in cached_fields:
+                    token, doc_labels = hint, []
+                    match = (token, doc_labels)
+                    break
+        if match is None:
+            fb = _try_visual_fallback("token_not_found")
+            if fb is not None:
+                return fb
+            return {"value": None, "status": "token_not_found", "error_flag": False}
 
     token, doc_labels = match
     pdf_field = re.sub(r"_\d+$", "", token)
@@ -600,6 +626,25 @@ def resolve_and_extract(doc_id: str, target_var: dict, var_token_map: dict,
         if fb is not None:
             return fb
         return {"value": None, "status": pdf_status or "pdf_not_found", "error_flag": False}
+
+    if select_type == "text":
+        # Text-box fields: read /V directly. Fall back to the TXT corpus
+        # label if the AcroForm field is missing (older PDFs that have
+        # been flattened often still leave the typed value visible in
+        # the TXT export even when get_fields() can't find it).
+        field = cached_fields.get(pdf_field)
+        if field is None:
+            label = doc_labels[0] if doc_labels else None
+            if not label:
+                return {"value": None, "status": "field_not_found", "error_flag": False}
+            return {"value": apply_csv_transform(label, transform),
+                    "status": "ok_via_txt", "error_flag": False, "raw_label": label}
+        v = field.get("/V")
+        if v is None or (isinstance(v, str) and v.strip() == ""):
+            return {"value": None, "status": "empty", "error_flag": False}
+        s = str(v).strip()
+        return {"value": apply_csv_transform(s, transform),
+                "status": "ok", "error_flag": False, "raw_label": s}
 
     res = extract_radio_from_fields(cached_fields, pdf_field)
     if res.get("status") == "field_not_found":
