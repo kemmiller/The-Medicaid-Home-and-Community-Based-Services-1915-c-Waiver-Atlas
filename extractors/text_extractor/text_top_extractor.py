@@ -65,22 +65,44 @@ SECTION4_COLUMNS = [
     "waive_geographic_lipd",
 ]
 
-# Appendix B-1: Target Groups (14 columns - only aged has min/max)
+# Appendix B-1: Target Groups (36 columns - checkbox + min + max for all 12 groups)
 B1_COLUMNS = [
     "aged_group",
     "aged_group_min",
     "aged_group_max",
     "physicaldis_group",
+    "physicaldis_group_min",
+    "physicaldis_group_max",
     "otherdis_group",
+    "otherdis_group_min",
+    "otherdis_group_max",
     "braininjury_group",
+    "braininjury_group_min",
+    "braininjury_group_max",
     "hivaids_group",
+    "hivaids_group_min",
+    "hivaids_group_max",
     "medicallyfrail_group",
+    "medicallyfrail_group_min",
+    "medicallyfrail_group_max",
     "techdep_group",
+    "techdep_group_min",
+    "techdep_group_max",
     "autism_group",
+    "autism_group_min",
+    "autism_group_max",
     "dd_group",
+    "dd_group_min",
+    "dd_group_max",
     "id_group",
+    "id_group_min",
+    "id_group_max",
     "mi_group",
+    "mi_group_min",
+    "mi_group_max",
     "sed_group",
+    "sed_group_min",
+    "sed_group_max",
 ]
 
 # Appendix B-2: Individual Cost Limit
@@ -721,9 +743,8 @@ class TextTopExtractor:
 
         for prefix in group_prefixes:
             result[prefix] = ""
-            if prefix == "aged_group":
-                result[f"{prefix}_min"] = ""
-                result[f"{prefix}_max"] = ""
+            result[f"{prefix}_min"] = ""
+            result[f"{prefix}_max"] = ""
 
         try:
             # Find the Appendix B-1 section
@@ -777,63 +798,55 @@ class TextTopExtractor:
     def _extract_single_group(
         self, raw_lines: list, display_name: str, col_prefix: str, result: dict
     ):
-        """Extract a single target group's checkbox and age values (ages only for aged_group)."""
+        """Extract a single target group's checkbox and age min/max values."""
+        _SKIP_VALS = {"Yes", "Off", "Maximum Age", "No Maximum Age", "Minimum Age"}
+        _NEXT_GROUP_MARKERS = [
+            "Aged or Disabled", "Disabled (Physical)", "Disabled (Other)",
+            "Brain Injury", "HIV/AIDS", "Medically Fragile", "Technology Dependent",
+            "Autism", "Developmental Disability", "Intellectual Disability",
+            "Mental Illness", "Serious Emotional Disturbance",
+            "Intellectual Disability or Developmental", "Additional Criteria", "b.",
+        ]
         try:
             for i, line in enumerate(raw_lines):
-                # For "Aged", we need exact match to avoid matching "Aged or Disabled"
+                matched = False
                 if col_prefix == "aged_group":
-                    # Look for line that is exactly "Aged" or starts with "Aged" but not "Aged or"
                     if line.strip() == "Aged" or (
                         line.strip().startswith("Aged") and "Aged or" not in line
                     ):
-                        # Look backwards for Yes/Off checkbox - search more lines and handle spacing
-                        for j in range(i - 1, max(0, i - 10), -1):
-                            val = raw_lines[j].strip()
-                            if val in ["Yes", "Off"]:
-                                result[col_prefix] = 1 if val == "Yes" else 0
-                                break
-
-                        # Extract ages for aged_group
-                        found_min = False
-                        found_max = False
-                        for j in range(i + 1, min(i + 8, len(raw_lines))):
-                            val = raw_lines[j].strip()
-                            if val in [
-                                "Yes",
-                                "Off",
-                                "Maximum Age",
-                                "No Maximum Age",
-                                "Minimum Age",
-                            ]:
-                                continue
-                            if val.isdigit() or (val and val[0].isdigit()):
-                                if not found_min:
-                                    result[f"{col_prefix}_min"] = val
-                                    found_min = True
-                                elif not found_max:
-                                    result[f"{col_prefix}_max"] = val
-                                    found_max = True
-                                    break
-                            if any(
-                                name in val
-                                for name, _ in [
-                                    ("Aged", "x"),
-                                    ("Disabled", "x"),
-                                    ("Brain", "x"),
-                                ]
-                            ):
-                                break
-                        break
+                        matched = True
                 else:
-                    # For other groups, use original logic
                     if display_name in line:
-                        # Look backwards for Yes/Off checkbox - extended range
-                        for j in range(i - 1, max(0, i - 10), -1):
-                            val = raw_lines[j].strip()
-                            if val in ["Yes", "Off"]:
-                                result[col_prefix] = 1 if val == "Yes" else 0
-                                break
+                        matched = True
+
+                if not matched:
+                    continue
+
+                # Checkbox: look backwards
+                for j in range(i - 1, max(0, i - 10), -1):
+                    val = raw_lines[j].strip()
+                    if val in ("Yes", "Off"):
+                        result[col_prefix] = 1 if val == "Yes" else 0
                         break
+
+                # Ages: scan forward until next group or end
+                found_min = False
+                found_max = False
+                for j in range(i + 1, min(i + 12, len(raw_lines))):
+                    val = raw_lines[j].strip()
+                    if val in _SKIP_VALS or val == "":
+                        continue
+                    if any(marker in val for marker in _NEXT_GROUP_MARKERS):
+                        break
+                    if val.isdigit() or (val and val[0].isdigit()):
+                        if not found_min:
+                            result[f"{col_prefix}_min"] = val
+                            found_min = True
+                        elif not found_max:
+                            result[f"{col_prefix}_max"] = val
+                            found_max = True
+                            break
+                break
         except Exception:
             pass
 
@@ -855,44 +868,132 @@ class TextTopExtractor:
         return self.target_groups.get("physicaldis_group", None)
 
     @property
+    def physicaldis_group_min(self) -> str:
+        return self.target_groups.get("physicaldis_group_min", "")
+
+    @property
+    def physicaldis_group_max(self) -> str:
+        return self.target_groups.get("physicaldis_group_max", "")
+
+    @property
     def otherdis_group(self) -> Optional[int]:
         return self.target_groups.get("otherdis_group", None)
+
+    @property
+    def otherdis_group_min(self) -> str:
+        return self.target_groups.get("otherdis_group_min", "")
+
+    @property
+    def otherdis_group_max(self) -> str:
+        return self.target_groups.get("otherdis_group_max", "")
 
     @property
     def braininjury_group(self) -> Optional[int]:
         return self.target_groups.get("braininjury_group", None)
 
     @property
+    def braininjury_group_min(self) -> str:
+        return self.target_groups.get("braininjury_group_min", "")
+
+    @property
+    def braininjury_group_max(self) -> str:
+        return self.target_groups.get("braininjury_group_max", "")
+
+    @property
     def hivaids_group(self) -> Optional[int]:
         return self.target_groups.get("hivaids_group", None)
+
+    @property
+    def hivaids_group_min(self) -> str:
+        return self.target_groups.get("hivaids_group_min", "")
+
+    @property
+    def hivaids_group_max(self) -> str:
+        return self.target_groups.get("hivaids_group_max", "")
 
     @property
     def medicallyfrail_group(self) -> Optional[int]:
         return self.target_groups.get("medicallyfrail_group", None)
 
     @property
+    def medicallyfrail_group_min(self) -> str:
+        return self.target_groups.get("medicallyfrail_group_min", "")
+
+    @property
+    def medicallyfrail_group_max(self) -> str:
+        return self.target_groups.get("medicallyfrail_group_max", "")
+
+    @property
     def techdep_group(self) -> Optional[int]:
         return self.target_groups.get("techdep_group", None)
+
+    @property
+    def techdep_group_min(self) -> str:
+        return self.target_groups.get("techdep_group_min", "")
+
+    @property
+    def techdep_group_max(self) -> str:
+        return self.target_groups.get("techdep_group_max", "")
 
     @property
     def autism_group(self) -> Optional[int]:
         return self.target_groups.get("autism_group", None)
 
     @property
+    def autism_group_min(self) -> str:
+        return self.target_groups.get("autism_group_min", "")
+
+    @property
+    def autism_group_max(self) -> str:
+        return self.target_groups.get("autism_group_max", "")
+
+    @property
     def dd_group(self) -> Optional[int]:
         return self.target_groups.get("dd_group", None)
+
+    @property
+    def dd_group_min(self) -> str:
+        return self.target_groups.get("dd_group_min", "")
+
+    @property
+    def dd_group_max(self) -> str:
+        return self.target_groups.get("dd_group_max", "")
 
     @property
     def id_group(self) -> Optional[int]:
         return self.target_groups.get("id_group", None)
 
     @property
+    def id_group_min(self) -> str:
+        return self.target_groups.get("id_group_min", "")
+
+    @property
+    def id_group_max(self) -> str:
+        return self.target_groups.get("id_group_max", "")
+
+    @property
     def mi_group(self) -> Optional[int]:
         return self.target_groups.get("mi_group", None)
 
     @property
+    def mi_group_min(self) -> str:
+        return self.target_groups.get("mi_group_min", "")
+
+    @property
+    def mi_group_max(self) -> str:
+        return self.target_groups.get("mi_group_max", "")
+
+    @property
     def sed_group(self) -> Optional[int]:
         return self.target_groups.get("sed_group", None)
+
+    @property
+    def sed_group_min(self) -> str:
+        return self.target_groups.get("sed_group_min", "")
+
+    @property
+    def sed_group_max(self) -> str:
+        return self.target_groups.get("sed_group_max", "")
 
     # =========================================================================
     # APPENDIX B-2: INDIVIDUAL COST LIMIT
@@ -1205,153 +1306,6 @@ class TextTopExtractor:
         """B-5: Spousal impoverishment rules used checkbox."""
         return self._get_inline_checkbox("Spousal impoverishment rules under")
 
-    @property
-    def spousal_impov_b(self) -> Optional[int]:
-        """B-5: Spousal impoverishment - rules ARE used (radio)."""
-        try:
-            start_idx = self._get_index("B-5: Post-Eligibility Treatment of Income")
-            for i in range(
-                start_idx, min(start_idx + 150, len(self._no_newline_document))
-            ):
-                line = self._no_newline_document[i]
-                if "svapdxB5_1:elgIncSpoImpRls" in line and "2015" in line:
-                    for j in range(i, min(i + 5, len(self._no_newline_document))):
-                        next_line = self._no_newline_document[j]
-                        if "are used to determine the eligibility" in next_line.lower():
-                            return 1
-            return 0
-        except:
-            pass
-        return None
-
-    @property
-    def spousal_impov_c(self) -> Optional[int]:
-        """B-5: Spousal impoverishment - rules are NOT used (radio)."""
-        try:
-            start_idx = self._get_index("B-5: Post-Eligibility Treatment of Income")
-            for i in range(
-                start_idx, min(start_idx + 150, len(self._no_newline_document))
-            ):
-                line = self._no_newline_document[i]
-                if "are not used to determine eligibility" in line.lower():
-                    for j in range(max(0, i - 5), i):
-                        if "svapdxB5_1:elgIncSpoImpRls" in self._no_newline_document[j]:
-                            return 1
-            return 0
-        except:
-            pass
-        return None
-
-    # =========================================================================
-    # APPENDIX B-6: EVALUATION / REEVALUATION OF LEVEL OF CARE
-    # =========================================================================
-
-    @property
-    def min_numservices(self) -> str:
-        """B-6-a-i: Minimum number of waiver services (text box)."""
-        try:
-            start_idx = self._get_index("B-6: Evaluation/Reevaluation of Level of Care")
-            for i in range(
-                start_idx, min(start_idx + 100, len(self._no_newline_document))
-            ):
-                line = self._no_newline_document[i]
-                m = re.search(r"need waiver services is:\s*(\S+)", line, re.IGNORECASE)
-                if m:
-                    return m.group(1).strip()
-        except:
-            pass
-        return ""
-
-    @property
-    def local_eval_a(self) -> Optional[int]:
-        """B-6-b: Evaluations performed directly by the Medicaid agency."""
-        return self._get_radio_selection_by_marker(
-            "Responsibility for Performing", "Directly by the Medicaid agency"
-        )
-
-    @property
-    def local_eval_b(self) -> Optional[int]:
-        """B-6-b: Evaluations performed by the operating agency in Appendix A."""
-        return self._get_radio_selection_by_marker(
-            "Responsibility for Performing",
-            "By the operating agency specified in Appendix A",
-        )
-
-    @property
-    def local_eval_c(self) -> Optional[int]:
-        """B-6-b: Evaluations performed by a contracted entity / government agency.
-
-        Accept both template wordings: older docs render this option as
-        "By an entity under contract..."; modern templates use "By a
-        government agency under contract...". Returns 1 if either wording
-        is selected, 0 if either wording is present-but-unselected, None
-        if neither phrase is found.
-        """
-        a = self._get_radio_selection_by_marker(
-            "Responsibility for Performing",
-            "By an entity under contract with the Medicaid agency",
-        )
-        b = self._get_radio_selection_by_marker(
-            "Responsibility for Performing",
-            "By a government agency under contract with the Medicaid agency",
-        )
-        if a == 1 or b == 1:
-            return 1
-        if a == 0 or b == 0:
-            return 0
-        return None
-
-    @property
-    def local_eval_d(self) -> Optional[int]:
-        """B-6-b: Evaluations performed by an Other entity."""
-        return self._get_radio_selection_by_marker(
-            "Responsibility for Performing", "Other"
-        )
-
-    @property
-    def local_eval_instrument_same(self) -> Optional[int]:
-        """B-6-e: Same instrument used for waiver and institutional LOC."""
-        return self._get_radio_selection_by_marker(
-            "Level of Care Instrument",
-            "The same instrument is used in determining the level of care for the waiver",
-        )
-
-    @property
-    def local_eval_instrument_diff(self) -> Optional[int]:
-        """B-6-e: Different instrument used for waiver vs. institutional LOC."""
-        return self._get_radio_selection_by_marker(
-            "Level of Care Instrument",
-            "A different instrument is used to determine the level of care for the waiver",
-        )
-
-    @property
-    def reeval_sched_3mo(self) -> Optional[int]:
-        """B-6-g: Reevaluation every three months."""
-        return self._get_radio_selection_by_marker(
-            "Reevaluation Schedule", "Every three months"
-        )
-
-    @property
-    def reeval_sched_6mo(self) -> Optional[int]:
-        """B-6-g: Reevaluation every six months."""
-        return self._get_radio_selection_by_marker(
-            "Reevaluation Schedule", "Every six months"
-        )
-
-    @property
-    def reeval_sched_12mo(self) -> Optional[int]:
-        """B-6-g: Reevaluation every twelve months."""
-        return self._get_radio_selection_by_marker(
-            "Reevaluation Schedule", "Every twelve months"
-        )
-
-    @property
-    def reeval_sched_other(self) -> Optional[int]:
-        """B-6-g: Reevaluation on other schedule."""
-        return self._get_radio_selection_by_marker(
-            "Reevaluation Schedule", "Other schedule"
-        )
-
     # =========================================================================
     # MAIN EXTRACTION METHOD
     # =========================================================================
@@ -1392,16 +1346,38 @@ class TextTopExtractor:
         data["aged_group_min"] = target_data.get("aged_group_min", "")
         data["aged_group_max"] = target_data.get("aged_group_max", "")
         data["physicaldis_group"] = target_data.get("physicaldis_group", None)
+        data["physicaldis_group_min"] = target_data.get("physicaldis_group_min", "")
+        data["physicaldis_group_max"] = target_data.get("physicaldis_group_max", "")
         data["otherdis_group"] = target_data.get("otherdis_group", None)
+        data["otherdis_group_min"] = target_data.get("otherdis_group_min", "")
+        data["otherdis_group_max"] = target_data.get("otherdis_group_max", "")
         data["braininjury_group"] = target_data.get("braininjury_group", None)
+        data["braininjury_group_min"] = target_data.get("braininjury_group_min", "")
+        data["braininjury_group_max"] = target_data.get("braininjury_group_max", "")
         data["hivaids_group"] = target_data.get("hivaids_group", None)
+        data["hivaids_group_min"] = target_data.get("hivaids_group_min", "")
+        data["hivaids_group_max"] = target_data.get("hivaids_group_max", "")
         data["medicallyfrail_group"] = target_data.get("medicallyfrail_group", None)
+        data["medicallyfrail_group_min"] = target_data.get("medicallyfrail_group_min", "")
+        data["medicallyfrail_group_max"] = target_data.get("medicallyfrail_group_max", "")
         data["techdep_group"] = target_data.get("techdep_group", None)
+        data["techdep_group_min"] = target_data.get("techdep_group_min", "")
+        data["techdep_group_max"] = target_data.get("techdep_group_max", "")
         data["autism_group"] = target_data.get("autism_group", None)
+        data["autism_group_min"] = target_data.get("autism_group_min", "")
+        data["autism_group_max"] = target_data.get("autism_group_max", "")
         data["dd_group"] = target_data.get("dd_group", None)
+        data["dd_group_min"] = target_data.get("dd_group_min", "")
+        data["dd_group_max"] = target_data.get("dd_group_max", "")
         data["id_group"] = target_data.get("id_group", None)
+        data["id_group_min"] = target_data.get("id_group_min", "")
+        data["id_group_max"] = target_data.get("id_group_max", "")
         data["mi_group"] = target_data.get("mi_group", None)
+        data["mi_group_min"] = target_data.get("mi_group_min", "")
+        data["mi_group_max"] = target_data.get("mi_group_max", "")
         data["sed_group"] = target_data.get("sed_group", None)
+        data["sed_group_min"] = target_data.get("sed_group_min", "")
+        data["sed_group_max"] = target_data.get("sed_group_max", "")
 
         # Appendix B-2: Individual Cost Limit
         data["cost_limit_pcntaboveinstit"] = self.cost_limit_pcntaboveinstit
@@ -1436,25 +1412,6 @@ class TextTopExtractor:
 
         # Appendix B-5: Post-Eligibility Treatment
         data["spousal_impov_a"] = self.spousal_impov_a
-        data["spousal_impov_b"] = self.spousal_impov_b
-        data["spousal_impov_c"] = self.spousal_impov_c
-
-        # Appendix B-6: Level-of-Care Evaluation
-        data["min_numservices"] = self.min_numservices
-        data["local_eval_a"] = self.local_eval_a
-        data["local_eval_b"] = self.local_eval_b
-        data["local_eval_c"] = self.local_eval_c
-        data["local_eval_d"] = self.local_eval_d
-        data["local_eval_instrument_same"] = self.local_eval_instrument_same
-        data["local_eval_instrument_diff"] = self.local_eval_instrument_diff
-        data["reeval_sched_3mo"] = self.reeval_sched_3mo
-        data["reeval_sched_6mo"] = self.reeval_sched_6mo
-        data["reeval_sched_12mo"] = self.reeval_sched_12mo
-        data["reeval_sched_other"] = self.reeval_sched_other
-
-        # NOTE: split-flag → merged-column collapse is intentionally NOT
-        # called here (see html_top_extractor.py for rationale).
-        # Collapse happens externally in the merge pipeline.
 
         return data
 
