@@ -71,6 +71,7 @@ APPENDIX_E_COLUMNS = [
     "scope_fms_2",
     "scope_fms_3",
     "scope_fms_4",
+    # E-1: Overview (13 of 13)
     "sd_numenrollees_ea1",
     "sd_numenrollees_ea2",
     "sd_numenrollees_ea3",
@@ -111,16 +112,46 @@ class HTMLSecondaryExtractor:
         self.document = document
         self._is_htm = is_htm
         self._full_text = document.get_text()
+        self._all_p = document.find_all("p")
+        # Pre-extract text for each <p> so label searches don't call get_text() repeatedly
+        self._p_texts = [p.get_text() for p in self._all_p]
+        self._p_find_cache: Dict[str, Any] = {}
+        # Pre-index form elements by ID to avoid repeated doc.find() scans
+        self._inputs: Dict[str, Any] = {}
+        self._textareas: Dict[str, Any] = {}
+        for tag in document.find_all(["input", "textarea"]):
+            eid = tag.get("id") or tag.get("name")
+            if eid:
+                store = self._inputs if tag.name == "input" else self._textareas
+                store.setdefault(eid, tag)
 
     # =========================================================================
     # HELPERS
     # =========================================================================
 
+    def _find_p(self, label: str, case_sensitive: bool = True) -> Optional[object]:
+        """Return first <p> whose text contains label; cached after first lookup."""
+        cache_key = (label, case_sensitive)
+        if cache_key in self._p_find_cache:
+            return self._p_find_cache[cache_key]
+        result = None
+        if case_sensitive:
+            for i, txt in enumerate(self._p_texts):
+                if label in txt:
+                    result = self._all_p[i]
+                    break
+        else:
+            low = label.lower()
+            for i, txt in enumerate(self._p_texts):
+                if low in txt.lower():
+                    result = self._all_p[i]
+                    break
+        self._p_find_cache[cache_key] = result
+        return result
+
     def _get_checkbox_value(self, element_id: str) -> Optional[int]:
         """1/0 by element id or name; None if not found."""
-        elem = self.document.find("input", {"id": element_id})
-        if elem is None:
-            elem = self.document.find("input", {"name": element_id})
+        elem = self._inputs.get(element_id)
         if elem is None:
             return None
         return 1 if "checked" in elem.attrs else 0
@@ -133,9 +164,7 @@ class HTMLSecondaryExtractor:
         class="s9" on the <p> itself (checked), vs plain <p> or <b> (unchecked).
         Returns 1, 0, or None if not found.
         """
-        p = self.document.find(
-            lambda tag: tag.name == "p" and label_text in tag.get_text()
-        )
+        p = self._find_p(label_text)
         if p is None:
             return None
         # class="s9" is the checked style in PDF-converted waivers
@@ -153,10 +182,8 @@ class HTMLSecondaryExtractor:
         return None
 
     def _get_input_value(self, element_id: str) -> Optional[str]:
-        """Text value of an <input> by id or name; None if missing/empty."""
-        elem = self.document.find("input", {"id": element_id})
-        if elem is None:
-            elem = self.document.find("input", {"name": element_id})
+        """Text value of an <input> by id; None if missing/empty."""
+        elem = self._inputs.get(element_id)
         if elem is None:
             return None
         val = elem.get("value", "").strip()
@@ -164,37 +191,56 @@ class HTMLSecondaryExtractor:
 
     def _get_textarea_value(self, element_id: str) -> str:
         """Text content of a <textarea> by id; empty string if missing."""
-        elem = self.document.find("textarea", {"id": element_id})
+        elem = self._textareas.get(element_id)
         if elem:
             return elem.get_text().strip()
         return ""
 
-    def _extract_section_text(
-        self, start_markers: List[str], end_markers: List[str], max_length: int = 12000
+    def _collect_paragraphs(
+        self, start_markers: List[str], end_markers: List[str], max_paras: int = 60
     ) -> str:
-        """Extract text between the first matching start and end markers."""
-        text = self._full_text
-        start_pos = -1
+        """
+        DOM-walk fallback for PDF-converted files (no full-text regex).
+        Finds the first <p> whose text contains any start_marker, then collects
+        text from subsequent <p> siblings until an end_marker is hit.
+        Returns joined text or '' if not found.
+        """
+        anchor = None
         for marker in start_markers:
-            m = re.search(re.escape(marker), text, re.IGNORECASE)
-            if m:
-                start_pos = m.end()
+            anchor = self._find_p(marker, case_sensitive=False)
+            if anchor:
                 break
-        if start_pos == -1:
+        if anchor is None:
             return ""
-        end_pos = len(text)
-        for marker in end_markers:
-            m = re.search(re.escape(marker), text[start_pos:], re.IGNORECASE)
-            if m:
-                end_pos = start_pos + m.start()
+
+        parts = []
+        for sib in anchor.find_next_siblings("p"):
+            txt = sib.get_text(separator=" ", strip=True)
+            if any(m.lower() in txt.lower() for m in end_markers):
                 break
-        extracted = text[start_pos:end_pos]
-        return extracted[:max_length].strip()
+            if txt:
+                parts.append(txt)
+            if len(parts) >= max_paras:
+                break
+        return " ".join(parts)
 
     @staticmethod
     def _clean_text(text: str) -> str:
-        text = re.sub(r"\s+", " ", text)
+        if not text:
+            return ""
+        for bad, good in [
+            ("�", ""), ("ÔøΩ", ""), ("", ""), ("✔", ""),
+            ("'", "'"), ("'", "'"), ("‘", "'"), ("’", "'"),
+            ("“", '"'), ("”", '"'), ("\xa0", " "),
+            ("•", ""), ("·", ""), ("◦", ""),
+        ]:
+            text = text.replace(bad, good)
         text = re.sub(r"Character Count:.*?out of \d+", "", text)
+        text = re.sub(r"Application for 1915\(c\) HCBS Waiver:[^P]*Page \d+ of \d+", "", text)
+        text = re.sub(r"https?://\S+", "", text)
+        text = re.sub(r"\(\d{2}/\d{2}/\d{4}\)", "", text)
+        text = re.sub(r"\d{2}/\d{2}/\d{4}", "", text)
+        text = re.sub(r"\s+", " ", text)
         return text.strip()
 
     # =========================================================================
@@ -272,7 +318,7 @@ class HTMLSecondaryExtractor:
         if text and len(text) > 50:
             return self._clean_text(text)
 
-        text = self._extract_section_text(
+        text = self._collect_paragraphs(
             start_markers=[
                 "other relevant information about the waiver's approach to participant direction",
                 "waiver's approach to participant direction.",
@@ -282,14 +328,9 @@ class HTMLSecondaryExtractor:
                 "Participant Direction Opportunities.",
                 "Specify the participant direction opportunities",
                 "E-1: Overview (2 of",
-                "Appendix E: Participant Direction of Services E-1:",
             ],
         )
         if text and len(text) > 50:
-            text = re.sub(
-                r"Appendix E[:\-–].*?E-1[:\-–]?\s*Overview.*?\d+\s*of\s*\d+",
-                "", text, flags=re.IGNORECASE,
-            )
             return self._clean_text(text)
 
         return ""
@@ -445,9 +486,7 @@ class HTMLSecondaryExtractor:
         if val is None:
             # "Other" is too generic — scope to the paragraph immediately after
             # "Scope of FMS" heading to avoid false matches elsewhere in the doc
-            scope_heading = self.document.find(
-                lambda tag: tag.name == "p" and "Scope of FMS" in tag.get_text()
-            )
+            scope_heading = self._find_p("Scope of FMS")
             if scope_heading:
                 for sib in scope_heading.find_next_siblings("p"):
                     txt = sib.get_text(strip=True)
@@ -479,17 +518,10 @@ class HTMLSecondaryExtractor:
         ea_vals = [None] * 5
         ba_vals = [None] * 5
 
-        table = self.document.find("p", string=lambda t: t and "Table E-1-n" in t)
-        if table is None:
-            table = self.document.find(
-                lambda tag: tag.name == "p" and "Table E-1-n" in tag.get_text()
-            )
+        table = self._find_p("Table E-1-n")
         tbl = table.find_next("table") if table else None
         if tbl is None:
-            # fallback: find table after "Goals for Participant Direction" heading
-            heading = self.document.find(
-                lambda tag: tag.name == "p" and "Goals for Participant Direction" in tag.get_text()
-            )
+            heading = self._find_p("Goals for Participant Direction")
             tbl = heading.find_next("table") if heading else None
 
         if tbl:
@@ -604,10 +636,11 @@ class HTMLSecondaryExtractor:
         if text and len(text) > 50:
             return self._clean_text(text)
 
-        text = self._extract_section_text(
+        text = self._collect_paragraphs(
             start_markers=[
                 "available upon request to CMS through the Medicaid agency",
                 "operating agency (if applicable).",
+                "Rate Determination Methods",
             ],
             end_markers=[
                 "Flow of Billings",
@@ -617,19 +650,6 @@ class HTMLSecondaryExtractor:
         )
         if text and len(text) > 50:
             return self._clean_text(text)
-
-        # Wider fallback
-        text = self._extract_section_text(
-            start_markers=["Rate Determination Methods"],
-            end_markers=["Flow of Billings", "b. Flow of Billings"],
-        )
-        if text:
-            text = re.sub(
-                r".*?(?:available upon request to CMS|operating agency \(if applicable\))\.?\s*",
-                "", text, flags=re.IGNORECASE | re.DOTALL,
-            )
-            if len(text.strip()) > 50:
-                return self._clean_text(text)
 
         return ""
 

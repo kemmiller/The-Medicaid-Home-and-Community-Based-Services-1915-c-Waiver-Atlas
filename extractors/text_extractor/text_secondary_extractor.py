@@ -167,6 +167,13 @@ class TextSecondaryExtractor:
     def _clean_text(lines: List[str]) -> str:
         """Join lines and strip artifacts."""
         text = " ".join(lines)
+        for bad, good in [
+            ("�", ""), ("ÔøΩ", ""), ("", ""), ("✔", ""),
+            ("'", "'"), ("'", "'"), ("'", "'"), ("'", "'"),
+            (""", '"'), (""", '"'), ("\xa0", " "),
+            ("•", ""), ("·", ""), ("◦", ""),
+        ]:
+            text = text.replace(bad, good)
         text = re.sub(r"Application for 1915\(c\) HCBS Waiver:[^P]*Page \d+ of \d+", "", text)
         text = re.sub(r"https?://\S+", "", text)
         text = re.sub(r"\(\d{2}/\d{2}/\d{4}\)", "", text)

@@ -32,6 +32,35 @@ import pandas as pd
 import numpy as np
 
 
+_ARTIFACT_REPLACEMENTS = [
+    ("â€™", "'"), ("â€œ", '"'), ("â€\x9d", '"'), ("â€˜", "'"),
+    ("â€¢", ""), ("Ã©", "é"), ("Ã¨", "è"), ("Ã ", "à"),
+    ("�", ""), ("ÔøΩ", ""), ("", ""), ("✔", ""),
+    ("‘", "'"), ("’", "'"), ("“", '"'), ("”", '"'),
+    ("•", ""), ("·", ""), ("◦", ""),
+    ("\xa0", " "),
+]
+_ARTIFACT_RE = re.compile(
+    r"Character Count:.*?out of \d+"
+    r"|Application for 1915\(c\) HCBS Waiver:[^P]*Page \d+ of \d+"
+    r"|https?://\S+"
+    r"|\(\d{2}/\d{2}/\d{4}\)"
+    r"|\bsv\w+:\w+\b"
+)
+
+
+def clean_text_value(val) -> str:
+    """Clean encoding artifacts, smart quotes, and bullets from a string value."""
+    if pd.isna(val) or val is None:
+        return ""
+    s = str(val)
+    for bad, good in _ARTIFACT_REPLACEMENTS:
+        s = s.replace(bad, good)
+    s = _ARTIFACT_RE.sub("", s)
+    s = re.sub(r"\s+", " ", s).strip()
+    return s
+
+
 def normalize_doc_id(doc_id) -> str:
     """Normalize a document ID: remove spaces/dots/underscores/dashes, uppercase."""
     if pd.isna(doc_id):
@@ -204,6 +233,14 @@ def merge_two_sources(
         merged_rows.append(row)
 
     merged_df = pd.DataFrame(merged_rows, columns=[id_col] + data_cols)
+
+    # Clean encoding artifacts and smart quotes from all string columns
+    str_cols = [c for c in data_cols if merged_df[c].dtype == object]
+    for col in str_cols:
+        merged_df[col] = merged_df[col].apply(
+            lambda v: clean_text_value(v) if isinstance(v, str) and v not in ("", "0", "1") else v
+        )
+
     print(f"\nMerged: {len(merged_df)} rows, {len(merged_df.columns)} columns")
     return merged_df
 
