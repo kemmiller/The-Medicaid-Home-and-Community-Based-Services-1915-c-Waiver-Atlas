@@ -184,7 +184,7 @@ def run_text(input_dir: str, output_dir: str, tier: str, verbose: bool = True):
         print(f"[TEXT] Errors: {len(errors)}")
 
 
-def test_single_file(file_path: str):
+def test_single_file(file_path: str, tier: str = "all"):
     """Test extraction on a single file and print results."""
     fp = Path(file_path)
     doc_id = fp.stem
@@ -198,27 +198,37 @@ def test_single_file(file_path: str):
         from bs4 import BeautifulSoup
         html = load_html(file_path)
         doc = BeautifulSoup(html, "html.parser")
-        top = HTMLTopExtractor(doc_id, doc).extract_all()
-        ter = HTMLTertiaryExtractor(doc_id, html).extract_all()
+        is_htm = ext == ".htm"
+        top = HTMLTopExtractor(doc_id, doc, is_htm=is_htm).extract_all()
+        sec = HTMLSecondaryExtractor(doc_id, doc, is_htm=is_htm).extract_all()
+        ter = HTMLTertiaryExtractor(doc_id, html, is_htm=is_htm).extract_all()
     elif ext == ".txt":
         lines = load_text_lines(file_path)
         top = TextTopExtractor(doc_id, lines).extract_all()
+        sec = TextSecondaryExtractor(doc_id, lines).extract_all()
         ter = TextTertiaryExtractor(doc_id, lines).extract_all()
     else:
         print(f"Unsupported file type: {ext}")
         return
 
-    print(f"\n[TOP] {len(top)} fields")
-    for k, v in list(top.items())[:10]:
-        print(f"  {k}: {v}")
-    print("  ...")
+    if tier in ("top", "all"):
+        print(f"\n[TOP] {len(top)} fields")
+        for k, v in list(top.items())[:10]:
+            print(f"  {k}: {v}")
+        print("  ...")
 
-    print(f"\n[TERTIARY] {len(ter)} fields")
-    filled_ter = [(k, v) for k, v in ter.items() if v != "" and v is not None and v != 0]
-    for k, v in filled_ter[:15]:
-        print(f"  {k}: {v}")
-    if len(filled_ter) > 15:
-        print(f"  ... ({len(filled_ter) - 15} more filled)")
+    if tier in ("secondary", "all"):
+        print(f"\n[SECONDARY] {len(sec)} fields")
+        for k, v in sec.items():
+            print(f"  {k}: {v}")
+
+    if tier in ("tertiary", "all"):
+        print(f"\n[TERTIARY] {len(ter)} fields")
+        filled_ter = [(k, v) for k, v in ter.items() if v != "" and v is not None and v != 0]
+        for k, v in filled_ter[:15]:
+            print(f"  {k}: {v}")
+        if len(filled_ter) > 15:
+            print(f"  ... ({len(filled_ter) - 15} more filled)")
 
 
 def main():
@@ -232,7 +242,7 @@ def main():
     args = parser.parse_args()
 
     if args.test_file:
-        test_single_file(args.test_file)
+        test_single_file(args.test_file, tier=args.tier)
         return
 
     if not args.input_dir:

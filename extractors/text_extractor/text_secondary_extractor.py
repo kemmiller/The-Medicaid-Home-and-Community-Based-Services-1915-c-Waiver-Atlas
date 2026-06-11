@@ -48,7 +48,6 @@ def _is_waiver_doc(path: Path) -> bool:
 # =============================================================================
 
 APPENDIX_E_COLUMNS = [
-    "participant_direction_offered",
     "selfdirection_description",
     "sd_livarrngmnt_1",
     "sd_livarrngmnt_2",
@@ -353,7 +352,7 @@ class TextSecondaryExtractor:
         names, _, _ = self._parse_services_table()
         if not names:
             return None
-        return str(names) if len(names) > 1 else names[0]
+        return "[" + ", ".join(names) + "]" if len(names) > 1 else names[0]
 
     @property
     def sd_service_1_ea(self) -> Optional[str]:
@@ -465,52 +464,86 @@ class TextSecondaryExtractor:
             )
         return self._cached_enrollment
 
-    def _get_enrollment_goal(self, authority: str, year: int) -> Optional[str]:
+    def _parse_enrollment_table(self):
         """
-        Find Year N under 'Participant - Employer/Budget Authority' block
-        and return the numeric value on the next non-blank line.
+        Parse Table E-1-n from text lines. Returns (ea_vals, ba_vals) each
+        a list of 5 Optional[str].
+
+        Two formats encountered:
+        1. Block format: "Participant - Employer Authority" header, then Year/number pairs,
+           then "Participant - Budget Authority" header, then Year/number pairs.
+        2. Flat format: Year/number pairs appear once (EA column), BA column is blank.
+           Detected when no "Participant - Employer/Budget Authority" headers exist.
         """
+        if hasattr(self, "_cached_enrollment_table"):
+            return self._cached_enrollment_table
+
         lines = self._enrollment_lines()
+        ea_vals = [None] * 5
+        ba_vals = [None] * 5
+
         if not lines:
-            return None
+            self._cached_enrollment_table = (ea_vals, ba_vals)
+            return self._cached_enrollment_table
 
-        auth_label = "Employer Authority" if authority == "ea" else "Budget Authority"
+        has_headers = any(
+            "Participant" in l and ("Employer Authority" in l or "Budget Authority" in l)
+            for l in lines
+        )
 
-        # Find the authority header
-        block_start = None
-        for j, line in enumerate(lines):
-            if "Participant" in line and auth_label in line:
-                block_start = j + 1
-                break
-        if block_start is None:
-            return None
+        def _extract_block(block):
+            """From a block of lines, return [val_yr1..val_yr5]."""
+            vals = [None] * 5
+            for j, line in enumerate(block):
+                for yr in range(1, 6):
+                    if f"Year {yr}" in line:
+                        # number may be inline
+                        inline = line.replace(f"Year {yr}", "").strip()
+                        if inline and inline.isdigit():
+                            vals[yr - 1] = inline
+                        else:
+                            for k in range(j + 1, min(j + 4, len(block))):
+                                cand = block[k].strip()
+                                if cand.isdigit():
+                                    vals[yr - 1] = cand
+                                    break
+                                if cand:
+                                    break
+            return vals
 
-        # Find next authority block to bound the search
-        block_end = len(lines)
-        other_label = "Budget Authority" if authority == "ea" else "Employer Authority"
-        for j in range(block_start, len(lines)):
-            if "Participant" in lines[j] and other_label in lines[j]:
-                block_end = j
-                break
+        if has_headers:
+            # Split into EA and BA blocks by header lines
+            ea_start = ba_start = None
+            for j, line in enumerate(lines):
+                if "Participant" in line and "Employer Authority" in line and ea_start is None:
+                    ea_start = j + 1
+                if "Participant" in line and "Budget Authority" in line and ba_start is None:
+                    ba_start = j + 1
 
-        block = lines[block_start:block_end]
+            ea_block = lines[ea_start:ba_start - 1] if ea_start and ba_start else (lines[ea_start:] if ea_start else [])
+            ba_block = lines[ba_start:] if ba_start else []
+            ea_vals = _extract_block(ea_block)
+            ba_vals = _extract_block(ba_block)
+        else:
+            # Flat format: single Year/number column. Determine EA vs BA from
+            # the CMS form field ID embedded in the text file that identifies
+            # which authority the waiver selected in E-1-b:
+            #   dosPtcOppType   (no suffix) → EA only  → numbers go to ea_vals
+            #   dosPtcOppType_2             → BA only  → numbers go to ba_vals
+            #   dosPtcOppType_3             → Both     → numbers go to ea_vals
+            flat_vals = _extract_block(lines)
+            ba_only = any("dosPtcOppType_2" in l for l in self._nbl)
+            if ba_only:
+                ba_vals = flat_vals
+            else:
+                ea_vals = flat_vals
 
-        # Find "Year N" then the number on the same or next line
-        year_token = f"Year {year}"
-        for j, line in enumerate(block):
-            if year_token in line:
-                # Number may be inline after tab/space
-                parts = line.replace(year_token, "").strip()
-                if parts and parts.isdigit():
-                    return parts
-                # Or on the next non-blank line
-                for k in range(j + 1, min(j + 4, len(block))):
-                    candidate = block[k].strip()
-                    if candidate.isdigit():
-                        return candidate
-                    if candidate:
-                        break
-        return None
+        self._cached_enrollment_table = (ea_vals, ba_vals)
+        return self._cached_enrollment_table
+
+    def _get_enrollment_goal(self, authority: str, year: int) -> Optional[str]:
+        ea_vals, ba_vals = self._parse_enrollment_table()
+        return (ea_vals if authority == "ea" else ba_vals)[year - 1]
 
     @property
     def sd_numenrollees_ea1(self) -> Optional[str]:
@@ -628,7 +661,6 @@ class TextSecondaryExtractor:
     def extract_all(self) -> Dict[str, Any]:
         return {
             "document_id": self.document_id,
-            "participant_direction_offered": self.participant_direction_offered,
             "selfdirection_description": self.selfdirection_description,
             "sd_livarrngmnt_1": self.sd_livarrngmnt_1,
             "sd_livarrngmnt_2": self.sd_livarrngmnt_2,

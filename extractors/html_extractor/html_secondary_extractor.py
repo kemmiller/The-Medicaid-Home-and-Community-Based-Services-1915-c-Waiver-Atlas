@@ -57,8 +57,6 @@ def _is_waiver_doc(path: Path) -> bool:
 # =============================================================================
 
 APPENDIX_E_COLUMNS = [
-    # E-0
-    "participant_direction_offered",
     # E-1
     "selfdirection_description",
     "sd_livarrngmnt_1",
@@ -126,6 +124,33 @@ class HTMLSecondaryExtractor:
         if elem is None:
             return None
         return 1 if "checked" in elem.attrs else 0
+
+    def _check_label_checkbox(self, label_text: str) -> Optional[int]:
+        """
+        Detect checkbox state for PDF-converted .htm/.html files where native
+        <input> elements are absent. Finds the <p> containing label_text and
+        checks the raw HTML before it for the glyph  (checked) or
+        class="s9" on the <p> itself (checked), vs plain <p> or <b> (unchecked).
+        Returns 1, 0, or None if not found.
+        """
+        p = self.document.find(
+            lambda tag: tag.name == "p" and label_text in tag.get_text()
+        )
+        if p is None:
+            return None
+        # class="s9" is the checked style in PDF-converted waivers
+        classes = p.get("class", [])
+        if "s9" in classes:
+            return 1
+        raw = str(p)
+        label_pos = raw.find(label_text)
+        pre = raw[:label_pos] if label_pos != -1 else ""
+        if "" in pre:
+            return 1
+        # Plain <p> or text in <b> or class="s2" plain label = unchecked
+        if "<span/>" in pre or "<span>" in pre or p.find("b") or "s2" in classes:
+            return 0
+        return None
 
     def _get_input_value(self, element_id: str) -> Optional[str]:
         """Text value of an <input> by id or name; None if missing/empty."""
@@ -272,17 +297,32 @@ class HTMLSecondaryExtractor:
     @property
     def sd_livarrngmnt_1(self) -> Optional[int]:
         """E-1-c: Private residence or family home. 1/0."""
-        return self._get_checkbox_value("svapdxE1_2:dosLivArrFam")
+        val = self._get_checkbox_value("svapdxE1_2:dosLivArrFam")
+        if val is None:
+            val = self._check_label_checkbox(
+                "Participant direction opportunities are available to participants who live in their own private residence"
+            )
+        return val
 
     @property
     def sd_livarrngmnt_2(self) -> Optional[int]:
         """E-1-c: Fewer than 4 persons unrelated to proprietor. 1/0."""
-        return self._get_checkbox_value("svapdxE1_2:dosLivArrSm")
+        val = self._get_checkbox_value("svapdxE1_2:dosLivArrSm")
+        if val is None:
+            val = self._check_label_checkbox(
+                "Participant direction opportunities are available to individuals who reside in other living arrangements"
+            )
+        return val
 
     @property
     def sd_livarrngmnt_3(self) -> Optional[int]:
         """E-1-c: Other specified living arrangements. 1/0."""
-        return self._get_checkbox_value("svapdxE1_2:dosLivArrOth")
+        val = self._get_checkbox_value("svapdxE1_2:dosLivArrOth")
+        if val is None:
+            val = self._check_label_checkbox(
+                "The participant direction opportunities are available to persons in the following other living arrangements"
+            )
+        return val
 
     def _parse_services_table(self):
         """
@@ -340,7 +380,7 @@ class HTMLSecondaryExtractor:
         names, _, _ = self._parse_services_table()
         if not names:
             return None
-        return str(names) if len(names) > 1 else names[0]
+        return "[" + ", ".join(names) + "]" if len(names) > 1 else names[0]
 
     @property
     def sd_service_1_ea(self) -> Optional[str]:
@@ -361,76 +401,177 @@ class HTMLSecondaryExtractor:
     @property
     def sd_fms_gov(self) -> Optional[int]:
         """E-1-h: FMS furnished by governmental entities. 1/0."""
-        return self._get_checkbox_value("svapdxE1_7:dosFMSByGovEnt")
+        val = self._get_checkbox_value("svapdxE1_7:dosFMSByGovEnt")
+        if val is None:
+            val = self._check_label_checkbox("Governmental entities")
+        return val
 
     @property
     def sd_fms_pe(self) -> Optional[int]:
         """E-1-h: FMS furnished by private entities. 1/0."""
-        return self._get_checkbox_value("svapdxE1_7:dosFMSByPrivEnt")
+        val = self._get_checkbox_value("svapdxE1_7:dosFMSByPrivEnt")
+        if val is None:
+            val = self._check_label_checkbox("Private entities")
+        return val
 
     @property
     def scope_fms_1(self) -> Optional[int]:
         """E-1-i: FMS verifies support worker citizenship. 1/0."""
-        return self._get_checkbox_value("svapdxE1_8:dosFMSAdmEmpCitz")
+        val = self._get_checkbox_value("svapdxE1_8:dosFMSAdmEmpCitz")
+        if val is None:
+            val = self._check_label_checkbox("Assist participant in verifying support worker citizenship")
+        return val
 
     @property
     def scope_fms_2(self) -> Optional[int]:
         """E-1-i: FMS collects/processes timesheets. 1/0."""
-        return self._get_checkbox_value("svapdxE1_8:dosFMSAdmEmpTime")
+        val = self._get_checkbox_value("svapdxE1_8:dosFMSAdmEmpTime")
+        if val is None:
+            val = self._check_label_checkbox("Collect and process timesheets")
+        return val
 
     @property
     def scope_fms_3(self) -> Optional[int]:
         """E-1-i: FMS processes payroll/withholding/taxes. 1/0."""
-        return self._get_checkbox_value("svapdxE1_8:dosFMSAdmEmpPay")
+        val = self._get_checkbox_value("svapdxE1_8:dosFMSAdmEmpPay")
+        if val is None:
+            val = self._check_label_checkbox("Process payroll, withholding")
+        return val
 
     @property
     def scope_fms_4(self) -> Optional[int]:
         """E-1-i: FMS scope — other. 1/0."""
-        return self._get_checkbox_value("svapdxE1_8:dosFMSAdmEmpOth")
+        val = self._get_checkbox_value("svapdxE1_8:dosFMSAdmEmpOth")
+        if val is None:
+            # "Other" is too generic — scope to the paragraph immediately after
+            # "Scope of FMS" heading to avoid false matches elsewhere in the doc
+            scope_heading = self.document.find(
+                lambda tag: tag.name == "p" and "Scope of FMS" in tag.get_text()
+            )
+            if scope_heading:
+                for sib in scope_heading.find_next_siblings("p"):
+                    txt = sib.get_text(strip=True)
+                    if txt == "Other":
+                        classes = sib.get("class", [])
+                        if "s9" in classes:
+                            val = 1
+                        elif sib.find("b"):
+                            val = 0
+                        break
+                    if any(tok in txt for tok in ("Appendix E", "E-1: Overview (9", "E-1: Overview (10")):
+                        break
+        return val
 
     # =========================================================================
     # APPENDIX E-1 : ENROLLMENT GOALS
     # =========================================================================
 
+    def _parse_enrollment_table(self):
+        """
+        Parse Table E-1-n from PDF-converted htm/html.
+        Structure per row: [Year label | EA col1 | EA input | EA col3 | BA col1 | BA input | BA col3]
+        The numeric value is in class="s31" <p> inside the input cell (index 2 for EA, 5 for BA).
+        Returns (ea_vals, ba_vals) each a list of 5 Optional[str].
+        """
+        if hasattr(self, "_cached_enrollment_table"):
+            return self._cached_enrollment_table
+
+        ea_vals = [None] * 5
+        ba_vals = [None] * 5
+
+        table = self.document.find("p", string=lambda t: t and "Table E-1-n" in t)
+        if table is None:
+            table = self.document.find(
+                lambda tag: tag.name == "p" and "Table E-1-n" in tag.get_text()
+            )
+        tbl = table.find_next("table") if table else None
+        if tbl is None:
+            # fallback: find table after "Goals for Participant Direction" heading
+            heading = self.document.find(
+                lambda tag: tag.name == "p" and "Goals for Participant Direction" in tag.get_text()
+            )
+            tbl = heading.find_next("table") if heading else None
+
+        if tbl:
+            data_rows = []
+            for row in tbl.find_all("tr"):
+                cells = row.find_all("td")
+                # Data rows have "Year N" (not "Waiver Year") in col 0
+                if cells and re.match(r"Year\s+\d", cells[0].get_text(strip=True)):
+                    data_rows.append(cells)
+
+            for idx, cells in enumerate(data_rows[:5]):
+                if len(cells) >= 6:
+                    # EA value: cell index 2 (the s31 input cell)
+                    ea_text = cells[2].get_text(strip=True)
+                    ea_vals[idx] = ea_text if ea_text else None
+                    # BA value: cell index 5
+                    ba_text = cells[5].get_text(strip=True)
+                    ba_vals[idx] = ba_text if ba_text else None
+
+        self._cached_enrollment_table = (ea_vals, ba_vals)
+        return self._cached_enrollment_table
+
+    def _get_enrollment(self, authority: str, year: int) -> Optional[str]:
+        """Try native input ID first, fall back to table parse."""
+        year_idx = year - 1
+        id_map = {
+            ("ea", 1): "svapdxE1_13:dosGlsEmpYr1Qty",
+            ("ea", 2): "svapdxE1_13:dosGlsEmpYr2Qty",
+            ("ea", 3): "svapdxE1_13:dosGlsEmpYr3Qty",
+            ("ea", 4): "svapdxE1_13:dosGlsEmpYr4Qty",
+            ("ea", 5): "svapdxE1_13:dosGlsEmpYr5Qty",
+            ("ba", 1): "svapdxE1_13:dosGlsBudYr1Qty",
+            ("ba", 2): "svapdxE1_13:dosGlsBudYr2Qty",
+            ("ba", 3): "svapdxE1_13:dosGlsBudYr3Qty",
+            ("ba", 4): "svapdxE1_13:dosGlsBudYr4Qty",
+            ("ba", 5): "svapdxE1_13:dosGlsBudYr5Qty",
+        }
+        val = self._get_input_value(id_map[(authority, year)])
+        if val is None:
+            ea_vals, ba_vals = self._parse_enrollment_table()
+            val = (ea_vals if authority == "ea" else ba_vals)[year_idx]
+        return val
+
     @property
     def sd_numenrollees_ea1(self) -> Optional[str]:
-        return self._get_input_value("svapdxE1_13:dosGlsEmpYr1Qty")
+        return self._get_enrollment("ea", 1)
 
     @property
     def sd_numenrollees_ea2(self) -> Optional[str]:
-        return self._get_input_value("svapdxE1_13:dosGlsEmpYr2Qty")
+        return self._get_enrollment("ea", 2)
 
     @property
     def sd_numenrollees_ea3(self) -> Optional[str]:
-        return self._get_input_value("svapdxE1_13:dosGlsEmpYr3Qty")
+        return self._get_enrollment("ea", 3)
 
     @property
     def sd_numenrollees_ea4(self) -> Optional[str]:
-        return self._get_input_value("svapdxE1_13:dosGlsEmpYr4Qty")
+        return self._get_enrollment("ea", 4)
 
     @property
     def sd_numenrollees_ea5(self) -> Optional[str]:
-        return self._get_input_value("svapdxE1_13:dosGlsEmpYr5Qty")
+        return self._get_enrollment("ea", 5)
 
     @property
     def sd_numenrollees_ba1(self) -> Optional[str]:
-        return self._get_input_value("svapdxE1_13:dosGlsBudYr1Qty")
+        return self._get_enrollment("ba", 1)
 
     @property
     def sd_numenrollees_ba2(self) -> Optional[str]:
-        return self._get_input_value("svapdxE1_13:dosGlsBudYr2Qty")
+        return self._get_enrollment("ba", 2)
 
     @property
     def sd_numenrollees_ba3(self) -> Optional[str]:
-        return self._get_input_value("svapdxE1_13:dosGlsBudYr3Qty")
+        return self._get_enrollment("ba", 3)
 
     @property
     def sd_numenrollees_ba4(self) -> Optional[str]:
-        return self._get_input_value("svapdxE1_13:dosGlsBudYr4Qty")
+        return self._get_enrollment("ba", 4)
 
     @property
     def sd_numenrollees_ba5(self) -> Optional[str]:
-        return self._get_input_value("svapdxE1_13:dosGlsBudYr5Qty")
+        return self._get_enrollment("ba", 5)
 
     # =========================================================================
     # APPENDIX E-2 : EMPLOYER AUTHORITY
@@ -439,12 +580,18 @@ class HTMLSecondaryExtractor:
     @property
     def sd_coemployer(self) -> Optional[int]:
         """E-2-a: Participant/Agency is co-employer of workers. 1/0."""
-        return self._get_checkbox_value("svapdxE2_1:dosPtcEmpCoemp")
+        val = self._get_checkbox_value("svapdxE2_1:dosPtcEmpCoemp")
+        if val is None:
+            val = self._check_label_checkbox("Participant/Co-Employer")
+        return val
 
     @property
     def sd_commonlaw(self) -> Optional[int]:
         """E-2-a: Participant is common law employer of workers. 1/0."""
-        return self._get_checkbox_value("svapdxE2_1:dosPtcEmpComLaw")
+        val = self._get_checkbox_value("svapdxE2_1:dosPtcEmpComLaw")
+        if val is None:
+            val = self._check_label_checkbox("Participant/Common Law Employer")
+        return val
 
     # =========================================================================
     # APPENDIX I-2 : PROVIDER RATE METHODS
@@ -494,8 +641,6 @@ class HTMLSecondaryExtractor:
         """Return all secondary fields as a dict (checkboxes + textboxes only)."""
         return {
             "document_id": self.document_id,
-            # E-0
-            "participant_direction_offered": self.participant_direction_offered,
             # E-1
             "selfdirection_description": self.selfdirection_description,
             "sd_livarrngmnt_1": self.sd_livarrngmnt_1,
