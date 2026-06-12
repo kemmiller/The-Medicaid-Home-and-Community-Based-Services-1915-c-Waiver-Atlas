@@ -75,11 +75,15 @@ APPENDIX_E_COLUMNS = [
     "sd_commonlaw",
 ]
 
+APPENDIX_B_COLUMNS = [
+    "min_numservices",
+]
+
 APPENDIX_I_COLUMNS = [
     "provider_rate_methods",
 ]
 
-ALL_COLUMNS = ["document_id"] + APPENDIX_E_COLUMNS + APPENDIX_I_COLUMNS
+ALL_COLUMNS = ["document_id"] + APPENDIX_E_COLUMNS + APPENDIX_B_COLUMNS + APPENDIX_I_COLUMNS
 
 
 # =============================================================================
@@ -631,6 +635,30 @@ class TextSecondaryExtractor:
         return self._check_yes_off("Common Law Employer")
 
     # =========================================================================
+    # APPENDIX B-6 : MINIMUM NUMBER OF SERVICES
+    # =========================================================================
+
+    @property
+    def min_numservices(self) -> Optional[int]:
+        """B-6-a-i: Minimum number of waiver services required for eligibility."""
+        _MARKER = "minimum number of waiver services"
+        _END = "Frequency of services"
+        for i, line in enumerate(self._nbl):
+            if _MARKER in line:
+                # value may be inline: "...is: 1"
+                m = re.search(r"is:\s*(\d+)", line)
+                if m:
+                    return int(m.group(1))
+                # value on next few lines before end marker
+                for j in range(i + 1, min(i + 5, len(self._nbl))):
+                    if _END in self._nbl[j]:
+                        break
+                    m = re.search(r"^\s*(\d+)\s*$", self._nbl[j])
+                    if m:
+                        return int(m.group(1))
+        return None
+
+    # =========================================================================
     # APPENDIX I-2 : PROVIDER RATE METHODS
     # =========================================================================
 
@@ -693,6 +721,7 @@ class TextSecondaryExtractor:
             "sd_numenrollees_ba5": self.sd_numenrollees_ba5,
             "sd_coemployer": self.sd_coemployer,
             "sd_commonlaw": self.sd_commonlaw,
+            "min_numservices": self.min_numservices,
             "provider_rate_methods": self.provider_rate_methods,
         }
 

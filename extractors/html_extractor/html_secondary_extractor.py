@@ -87,13 +87,17 @@ APPENDIX_E_COLUMNS = [
     "sd_commonlaw",
 ]
 
+APPENDIX_B_COLUMNS = [
+    "min_numservices",
+]
+
 APPENDIX_I_COLUMNS = [
     "provider_rate_methods",
 ]
 
 # After radio collapse, sd_authority replaces sd_employerauth/sd_budgetauth/sd_bothauth
 # and sd_election replaces sd_election_1/2/3 — so final column count differs from raw.
-ALL_COLUMNS = ["document_id"] + APPENDIX_E_COLUMNS + APPENDIX_I_COLUMNS
+ALL_COLUMNS = ["document_id"] + APPENDIX_E_COLUMNS + APPENDIX_B_COLUMNS + APPENDIX_I_COLUMNS
 
 
 # =============================================================================
@@ -626,6 +630,37 @@ class HTMLSecondaryExtractor:
         return val
 
     # =========================================================================
+    # APPENDIX B-6 : MINIMUM NUMBER OF SERVICES
+    # =========================================================================
+
+    @property
+    def min_numservices(self) -> Optional[int]:
+        """B-6-a-i: Minimum number of waiver services required for eligibility."""
+        # Native htm: numeric input field
+        val = self._get_input_value("B6_1:elgEvalSvcMinQty")
+        if val is not None:
+            try:
+                return int(float(str(val).strip()))
+            except (ValueError, TypeError):
+                pass
+
+        # PDF-converted html: parse from paragraph text
+        p = self._find_p("minimum number of waiver services", case_sensitive=False)
+        if p:
+            txt = p.get_text(separator=" ", strip=True)
+            m = re.search(r"is:\s*(\d+)", txt)
+            if m:
+                return int(m.group(1))
+            # value may be in the next sibling paragraph
+            for sib in p.find_next_siblings("p", limit=3):
+                sib_txt = sib.get_text(strip=True)
+                m = re.search(r"^\d+$", sib_txt)
+                if m:
+                    return int(sib_txt)
+
+        return None
+
+    # =========================================================================
     # APPENDIX I-2 : PROVIDER RATE METHODS
     # =========================================================================
 
@@ -688,6 +723,8 @@ class HTMLSecondaryExtractor:
             # E-2
             "sd_coemployer": self.sd_coemployer,
             "sd_commonlaw": self.sd_commonlaw,
+            # B-6
+            "min_numservices": self.min_numservices,
             # I-2
             "provider_rate_methods": self.provider_rate_methods,
         }
