@@ -582,13 +582,18 @@ class MiscPDFExtractor:
                 drawings = page.get_drawings()
                 rect = label_rects[0]
 
+                # Search far enough left to cover the visual band below
+                # (x0_off=30): a stroked box whose outline would otherwise fall
+                # inside the band must be found here and measured by interior
+                # pixel-density, never read as ink by the band.
+                box_search_left = max(x_max_offset, 32.0)
                 near = [
                     d for d in drawings
                     if d.get("rect") is not None
                     and min_size <= d["rect"].width <= max_size
                     and min_size <= d["rect"].height <= max_size
                     and d["rect"].x1 <= rect.x0
-                    and d["rect"].x0 >= rect.x0 - x_max_offset
+                    and d["rect"].x0 >= rect.x0 - box_search_left
                     and d["rect"].y1 >= rect.y0 - y_tol
                     and d["rect"].y0 <= rect.y1 + y_tol
                 ]
@@ -1803,11 +1808,16 @@ class MiscPDFExtractor:
                 if len(row_locations) == 12:
                     break
 
-            # For each located row, find the 9x9 stroked-outline at x≈89.6.
+            # For each located row, find the checkbox-sized stroked box just
+            # left of the label. Anchored on the label (box centre sits a
+            # near-constant ~7-9px left of label.x0 across templates) rather
+            # than a fixed x-window, so the differing label column doesn't
+            # cause misses that drop to the band and read the box outline.
             for row_idx, (pno, label_rect) in row_locations.items():
                 page = doc[pno]
                 label_cy = (label_rect.y0 + label_rect.y1) / 2.0
                 box = None
+                best_gap = float("inf")
                 for d in page.get_drawings():
                     if d.get("type") != "s":
                         continue
@@ -1816,15 +1826,15 @@ class MiscPDFExtractor:
                         continue
                     if not (8.0 <= r.width <= 11.0 and 8.0 <= r.height <= 11.0):
                         continue
-                    box_cy = (r.y0 + r.y1) / 2.0
-                    if abs(box_cy - label_cy) > 6.0:
+                    if abs((r.y0 + r.y1) / 2.0 - label_cy) > 6.0:
                         continue
                     box_cx = (r.x0 + r.x1) / 2.0
-                    # eligibility column x ≈ 89.6 (center ≈ 94)
-                    if not (80.0 <= box_cx <= 105.0):
+                    gap = label_rect.x0 - box_cx
+                    if not (0.0 < gap <= 25.0):
                         continue
-                    box = r
-                    break
+                    if gap < best_gap:
+                        best_gap = gap
+                        box = r
                 if box is not None:
                     out[f"eligibility_{row_idx}"] = (
                         self._checkbox_filled_by_pixels(page, box)
@@ -3137,11 +3147,14 @@ class MiscPDFExtractor:
     # Column x-windows derived from the page-23 header positions; see
     # the plan file for the geometry survey.
     _APPX_B1_SUBGROUP_X = (205.0, 235.0)   # SubGroup label column (PA labels at x≈208)
-    _APPX_B1_INCLUDED_X_CENTER = 186.0     # Included checkbox column
     _APPX_B1_MIN_AGE_X = (362.0, 414.0)    # Minimum Age text column
     _APPX_B1_MAX_AGE_X = (425.0, 485.0)    # Maximum Age Limit text column
     _APPX_B1_ROW_Y_TOL = 6.0
-    _APPX_B1_BOX_X_TOL = 10.0
+    # The Included checkbox sits a near-constant gap left of the subgroup
+    # label (CO/IN/VA all ≈29-31px between box.x1 and label.x0); the absolute
+    # x varies with the label column, so anchor on the label, not a fixed x.
+    _APPX_B1_BOX_GAP_MIN = 18.0
+    _APPX_B1_BOX_GAP_MAX = 45.0
 
     def _extract_appendix_b1_table(self) -> Dict[str, Any]:
         """One geometry pass over Appendix-B-1 Section a.
@@ -3217,7 +3230,15 @@ class MiscPDFExtractor:
 
                 drawings = page.get_drawings()
 
-                def _find_box(row_cy: float, x_center: float):
+                def _find_box(label_rect):
+                    """Nearest checkbox-sized stroked box just left of the row
+                    label. Anchored on the label (consistent ~29px gap) rather
+                    than a fixed x, so the differing label-column x across
+                    templates doesn't cause misses (which previously dropped to
+                    the band fallback and read the box outline as a check)."""
+                    row_cy = (label_rect.y0 + label_rect.y1) / 2.0
+                    best = None
+                    best_gap = float("inf")
                     for d in drawings:
                         if d.get("type") != "s":
                             continue
@@ -3226,22 +3247,23 @@ class MiscPDFExtractor:
                             continue
                         if not (8.0 <= r.width <= 11.0 and 8.0 <= r.height <= 11.0):
                             continue
-                        box_cy = (r.y0 + r.y1) / 2.0
-                        if abs(box_cy - row_cy) > self._APPX_B1_ROW_Y_TOL:
+                        if abs((r.y0 + r.y1) / 2.0 - row_cy) > self._APPX_B1_ROW_Y_TOL:
                             continue
-                        box_cx = (r.x0 + r.x1) / 2.0
-                        if abs(box_cx - x_center) > self._APPX_B1_BOX_X_TOL:
+                        gap = label_rect.x0 - r.x1
+                        if not (self._APPX_B1_BOX_GAP_MIN <= gap <= self._APPX_B1_BOX_GAP_MAX):
                             continue
-                        return r
-                    return None
+                        if gap < best_gap:
+                            best_gap = gap
+                            best = r
+                    return best
 
                 # Included-column checkbox for each located row. Prefer the
                 # stroked-box + pixel-density path; fall back to the ink in the
-                # band left of the label when no box exists (flattened glyph
-                # family, where the B-1 check-mark sits ~30px left of the row
-                # label).
+                # band left of the label only when no box exists at all
+                # (flattened glyph family, e.g. PA, where the check-mark sits
+                # ~30px left of the row label).
                 for var, cy in row_y.items():
-                    box = _find_box(cy, self._APPX_B1_INCLUDED_X_CENTER)
+                    box = _find_box(row_rect[var])
                     if box is not None:
                         out[var] = self._checkbox_filled_by_pixels(page, box)
                     else:
