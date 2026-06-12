@@ -109,6 +109,20 @@ TARGET_VARIABLES: list[dict[str, Any]] = [
         "csv_transform": None,
     },
     {
+        # Appendix B-4: Optional categorically needy aged/disabled sub-radio.
+        # Two options: 100% FPL vs. a lower % of FPL. The token is absent from
+        # the TXT corpus, so labels are fixed here and the field is read via the
+        # direct-field-lookup fallback in resolve_and_extract.
+        "output_col":    "eligibility_5_100",
+        "token_hints":   ["svapdxB4_1:elgGrpCatNdyType"],
+        "select_type":   "single",
+        "csv_transform": None,
+        "fixed_labels":  [
+            "100% of the Federal poverty level (FPL)",
+            "% of FPL, which is lower than 100% of FPL.",
+        ],
+    },
+    {
         "output_col":    "spousal_impov_bc",
         "token_hints":   [
             "svapdxB5_1:elgIncSpoImpRls_2015",
@@ -144,13 +158,6 @@ TARGET_VARIABLES: list[dict[str, Any]] = [
         "output_col":    "local_eval_instrument",
         "token_hints":   ["svapdxB6_1:elgEvalLOCInstType"],
         "select_type":   "single",
-        "csv_transform": None,
-    },
-    {
-        # Appendix B-6-a-i: Minimum number of waiver services (text box).
-        "output_col":    "min_numservices",
-        "token_hints":   ["svapdxB6_1:elgEvalSvcMinQty"],
-        "select_type":   "text",
         "csv_transform": None,
     },
     {
@@ -601,16 +608,23 @@ def resolve_and_extract(doc_id: str, target_var: dict, var_token_map: dict,
             "raw_label": label,
         }
 
+    fixed_labels = target_var.get("fixed_labels")
     match = var_token_map.get((doc_id, col))
     if match is None:
-        # For text fields, the AcroForm field name is fully specified in
-        # token_hints — no TXT-corpus label lookup is required. Try direct
-        # field lookup before failing.
+        # The AcroForm field name is fully specified in token_hints, so no
+        # TXT-corpus label lookup is required. Try direct field lookup before
+        # failing. This covers (a) text fields and (b) single-select radios
+        # whose token is absent from the TXT corpus but whose option labels
+        # are supplied via `fixed_labels`.
         if select_type == "text" and cached_fields is not None:
             for hint in target_var["token_hints"]:
                 if hint in cached_fields:
-                    token, doc_labels = hint, []
-                    match = (token, doc_labels)
+                    match = (hint, [])
+                    break
+        elif fixed_labels and cached_fields is not None:
+            for hint in target_var["token_hints"]:
+                if hint in cached_fields:
+                    match = (hint, fixed_labels)
                     break
         if match is None:
             fb = _try_visual_fallback("token_not_found")
@@ -619,6 +633,10 @@ def resolve_and_extract(doc_id: str, target_var: dict, var_token_map: dict,
             return {"value": None, "status": "token_not_found", "error_flag": False}
 
     token, doc_labels = match
+    # When fixed option labels are declared, they are authoritative — use them
+    # regardless of whether the match came from the TXT corpus or direct lookup.
+    if fixed_labels:
+        doc_labels = fixed_labels
     pdf_field = re.sub(r"_\d+$", "", token)
 
     if pdf_status != "ok" or cached_fields is None:

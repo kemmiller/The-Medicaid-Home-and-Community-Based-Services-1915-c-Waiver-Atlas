@@ -153,7 +153,6 @@ class MiscPDFExtractor:
         anchors: List[tuple],
         y_tol: float = 4.0,
         max_left_offset: float = 25.0,
-        max_circle_size: float = 20.0,
     ) -> Optional[str]:
         """Visual fallback for radios where options share a single line.
 
@@ -182,9 +181,26 @@ class MiscPDFExtractor:
             return None
 
         try:
-            for page in doc:
+            # The option row sometimes renders at the top of the page AFTER
+            # the one carrying the `context` label (e.g. IN.0378: the
+            # "Requested Approval Period" prompt is on one page but the
+            # "3 years"/"5 years" row spills to the top of the next). Build a
+            # candidate page list of each context page plus the page that
+            # immediately follows it.
+            candidate_pnos: List[int] = []
+            for pno, page in enumerate(doc):
                 if context.lower() not in page.get_text().lower():
                     continue
+                candidate_pnos.append(pno)
+                if pno + 1 < doc.page_count:
+                    candidate_pnos.append(pno + 1)
+
+            seen_pnos: set = set()
+            for pno in candidate_pnos:
+                if pno in seen_pnos:
+                    continue
+                seen_pnos.add(pno)
+                page = doc[pno]
 
                 anchor_rects: List[tuple] = []
                 seen_labels: set = set()
@@ -205,32 +221,69 @@ class MiscPDFExtractor:
                 if len(anchor_rects) < 2:
                     continue
 
+                # Selection signal is the small filled inner dot to the left
+                # of an option's label. The outer ring carries no signal (it
+                # renders on every option, as either a filled or a stroked
+                # drawing depending on the PDF family) so we ignore it and
+                # look only for an inner-dot fill in the inner-circle size
+                # window. See _detect_vertical_radio for the same mechanic.
                 drawings = page.get_drawings()
                 selected_label: Optional[str] = None
                 for rect, label in anchor_rects:
-                    fills = []
-                    for d in drawings:
-                        if d.get("type") != "f":
-                            continue
-                        r = d.get("rect")
-                        if r is None:
-                            continue
-                        if r.width > max_circle_size or r.height > max_circle_size:
-                            continue
-                        if not (r.x1 <= rect.x0 and r.x0 >= rect.x0 - max_left_offset):
-                            continue
-                        if r.y1 < rect.y0 - y_tol or r.y0 > rect.y1 + y_tol:
-                            continue
-                        fills.append(r)
-
-                    if len(fills) >= 2:
+                    anchor_cy = (rect.y0 + rect.y1) / 2.0
+                    if self._has_inner_dot(
+                        drawings, rect, anchor_cy, max_left_offset, y_tol
+                    ):
                         if selected_label is not None:
                             return None
                         selected_label = label
-                return selected_label
+                if selected_label is not None:
+                    return selected_label
         finally:
             doc.close()
         return None
+
+    # Inner-dot size window (px) for radio selection detection. Both observed
+    # PDF families paint the selected option's inner dot in this range
+    # (CO ~4.9 px, IN ~3.9 px) while their outer rings (CO ~9.8 px,
+    # IN ~6.8 px) fall above it.
+    _INNER_DOT_MIN = 2.5
+    _INNER_DOT_MAX = 6.5
+
+    def _has_inner_dot(
+        self,
+        drawings,
+        anchor_rect,
+        anchor_cy: float,
+        max_left_offset: float,
+        y_tol: float,
+    ) -> bool:
+        """Return True if a filled inner-dot drawing sits left of `anchor_rect`.
+
+        A qualifying dot is a filled (`type="f"`) drawing sized within
+        [_INNER_DOT_MIN, _INNER_DOT_MAX] in both dimensions, positioned to the
+        left of the anchor's text bbox (within `max_left_offset` px) and
+        vertically centred on the anchor (centre within `y_tol` px). This is
+        the single rendering-invariant selection signal shared by both
+        observed PDF families.
+        """
+        for d in drawings:
+            if d.get("type") != "f":
+                continue
+            r = d.get("rect")
+            if r is None:
+                continue
+            if not (
+                self._INNER_DOT_MIN <= r.width <= self._INNER_DOT_MAX
+                and self._INNER_DOT_MIN <= r.height <= self._INNER_DOT_MAX
+            ):
+                continue
+            if not (r.x1 <= anchor_rect.x0 and r.x0 >= anchor_rect.x0 - max_left_offset):
+                continue
+            if abs((r.y0 + r.y1) / 2.0 - anchor_cy) > y_tol + 2.0:
+                continue
+            return True
+        return False
 
     # ------------------------------------------------------------------
     # Pixel-density checkbox-fill detector
@@ -287,6 +340,48 @@ class MiscPDFExtractor:
         if total == 0:
             return 0
         return 1 if (dark / total) > fill_ratio_threshold else 0
+
+    # ------------------------------------------------------------------
+    # Glyph-checkbox helper (ZapfDingbats checkmark family)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _dingbat_checked(
+        page,
+        label_rect,
+        max_left: float = 55.0,
+        y_tol: float = 7.0,
+    ) -> bool:
+        """Return True if a ZapfDingbats checkmark glyph sits left of `label_rect`.
+
+        Some templates (e.g. PA.0593) render checkboxes not as stroked
+        squares but as a font glyph: a *checked* box is a `ZapfDingbats`
+        span (the '3' check-mark) painted just to the left of the label,
+        while an *unchecked* box has no glyph at all. This is the fallback
+        signal when the stroked-box / pixel-density detectors find nothing.
+
+        A qualifying glyph has its font containing "ZapfDingbats", sits to
+        the left of the label (`span.x1 <= label.x0` within `max_left` px),
+        and is vertically aligned with the label (centre within `y_tol`).
+        """
+        label_cy = (label_rect.y0 + label_rect.y1) / 2.0
+        td = page.get_text("dict")
+        for block in td.get("blocks", []):
+            if block.get("type") != 0:
+                continue
+            for line in block.get("lines", []):
+                for s in line.get("spans", []):
+                    if "ZapfDingbats" not in s.get("font", ""):
+                        continue
+                    if not s["text"].strip():
+                        continue
+                    sx0, sy0, sx1, sy1 = s["bbox"]
+                    if not (sx1 <= label_rect.x0 and sx0 >= label_rect.x0 - max_left):
+                        continue
+                    if abs((sy0 + sy1) / 2.0 - label_cy) > y_tol:
+                        continue
+                    return True
+        return False
 
     # ------------------------------------------------------------------
     # Visual checkbox helper (small square to the left of a label)
@@ -381,7 +476,6 @@ class MiscPDFExtractor:
         section_end: Optional[str] = None,
         y_tol: float = 4.0,
         max_left_offset: float = 25.0,
-        max_circle_size: float = 20.0,
         max_pages: int = 1,
     ) -> Optional[str]:
         """Visual fallback for vertically-stacked radios where each option
@@ -422,150 +516,128 @@ class MiscPDFExtractor:
             return None
 
         try:
-            # Find the start page (first page containing section_start).
-            start_pno: Optional[int] = None
-            for pno, page in enumerate(doc):
-                if section_start.lower() in page.get_text().lower():
-                    start_pno = pno
-                    break
-            if start_pno is None:
+            # A de-prefixed section heading (we anchor on heading text only,
+            # since section letters render separately/shifted across PDF
+            # families) can also occur on an earlier amendment/TOC page where
+            # the radio options are absent. Try every page that contains
+            # section_start and return the first that resolves to a unique
+            # selected option.
+            start_pnos = [
+                pno
+                for pno, page in enumerate(doc)
+                if section_start.lower() in page.get_text().lower()
+            ]
+            if not start_pnos:
                 return None
 
             anchor_patterns = [
                 (re.compile(r"\b" + re.escape(needle) + r"\b", re.IGNORECASE), label)
                 for needle, label in anchors
             ]
-            # Collected anchors across pages: (page_idx, fitz.Rect, label)
-            all_anchors: List[tuple] = []
-            seen_labels: set = set()
 
-            for offset in range(max_pages):
-                pno = start_pno + offset
-                if pno >= doc.page_count:
-                    break
-                page = doc[pno]
-                td = page.get_text("dict")
+            for start_pno in start_pnos:
+                # Collected anchors across pages: (page_idx, fitz.Rect, label)
+                all_anchors: List[tuple] = []
+                seen_labels: set = set()
 
-                # Determine y_start for this page in the range.
-                if offset == 0:
-                    y_start: Optional[float] = None
-                    for block in td.get("blocks", []):
-                        if block.get("type") != 0:
-                            continue
-                        for line in block.get("lines", []):
-                            line_text = "".join(
-                                s["text"] for s in line.get("spans", [])
-                            )
-                            if section_start.lower() in line_text.lower():
-                                y_start = line["bbox"][1]
-                                break
-                        if y_start is not None:
-                            break
-                    if y_start is None:
-                        continue
-                else:
-                    y_start = 0.0
+                for offset in range(max_pages):
+                    pno = start_pno + offset
+                    if pno >= doc.page_count:
+                        break
+                    page = doc[pno]
+                    td = page.get_text("dict")
 
-                # Determine y_end for this page (if section_end found here).
-                y_end: float = float("inf")
-                if section_end:
-                    for block in td.get("blocks", []):
-                        if block.get("type") != 0:
-                            continue
-                        for line in block.get("lines", []):
-                            line_text = "".join(
-                                s["text"] for s in line.get("spans", [])
-                            )
-                            if (
-                                section_end.lower() in line_text.lower()
-                                and line["bbox"][1] > y_start
-                            ):
-                                y_end = line["bbox"][1]
-                                break
-                        if y_end != float("inf"):
-                            break
-
-                # Scan spans on this page for anchors not yet seen.
-                for block in td.get("blocks", []):
-                    if block.get("type") != 0:
-                        continue
-                    for line in block.get("lines", []):
-                        for s in line.get("spans", []):
-                            if not (y_start < s["bbox"][1] < y_end):
+                    # Determine y_start for this page in the range.
+                    if offset == 0:
+                        y_start: Optional[float] = None
+                        for block in td.get("blocks", []):
+                            if block.get("type") != 0:
                                 continue
-                            for pat, label in anchor_patterns:
-                                if label in seen_labels:
-                                    continue
-                                if pat.search(s["text"]):
-                                    all_anchors.append(
-                                        (pno, fitz.Rect(s["bbox"]), label)
-                                    )
-                                    seen_labels.add(label)
+                            for line in block.get("lines", []):
+                                line_text = "".join(
+                                    s["text"] for s in line.get("spans", [])
+                                )
+                                if section_start.lower() in line_text.lower():
+                                    y_start = line["bbox"][1]
                                     break
+                            if y_start is not None:
+                                break
+                        if y_start is None:
+                            continue
+                    else:
+                        y_start = 0.0
 
-                # Stop walking once section_end was hit on this page.
-                if y_end != float("inf"):
-                    break
+                    # Determine y_end for this page (if section_end found here).
+                    y_end: float = float("inf")
+                    if section_end:
+                        for block in td.get("blocks", []):
+                            if block.get("type") != 0:
+                                continue
+                            for line in block.get("lines", []):
+                                line_text = "".join(
+                                    s["text"] for s in line.get("spans", [])
+                                )
+                                if (
+                                    section_end.lower() in line_text.lower()
+                                    and line["bbox"][1] > y_start
+                                ):
+                                    y_end = line["bbox"][1]
+                                    break
+                            if y_end != float("inf"):
+                                break
 
-            if not all_anchors:
-                return None
+                    # Scan spans on this page for anchors not yet seen.
+                    for block in td.get("blocks", []):
+                        if block.get("type") != 0:
+                            continue
+                        for line in block.get("lines", []):
+                            for s in line.get("spans", []):
+                                if not (y_start < s["bbox"][1] < y_end):
+                                    continue
+                                for pat, label in anchor_patterns:
+                                    if label in seen_labels:
+                                        continue
+                                    if pat.search(s["text"]):
+                                        all_anchors.append(
+                                            (pno, fitz.Rect(s["bbox"]), label)
+                                        )
+                                        seen_labels.add(label)
+                                        break
 
-            # Vertical detection: options share an x column, so y
-            # separation isolates each anchor's circles. For each anchor
-            # pick the single closest outer ring (size ~8-12 px) to the
-            # LEFT of the label on the anchor's own page, then check
-            # whether there is an inner-fill drawing (size ~3-7 px)
-            # CONTAINED inside that ring.
-            outer_min, outer_max = 8.0, 12.0
-            inner_min, inner_max = 3.0, 7.0
-            ring_y_distance_max = 8.0
+                    # Stop walking once section_end was hit on this page.
+                    if y_end != float("inf"):
+                        break
 
-            selected_label: Optional[str] = None
-            for pno, rect, label in all_anchors:
-                page = doc[pno]
-                drawings = page.get_drawings()
-                anchor_cy = (rect.y0 + rect.y1) / 2.0
+                if not all_anchors:
+                    continue
 
-                rings = []
-                for d in drawings:
-                    if d.get("type") != "f":
-                        continue
-                    r = d.get("rect")
-                    if r is None:
-                        continue
-                    if not (
-                        outer_min <= r.width <= outer_max
-                        and outer_min <= r.height <= outer_max
+                # Vertical detection: options share an x column, so y
+                # separation isolates each anchor's row. The selection signal
+                # is the small filled inner dot to the LEFT of an option's
+                # label (see _has_inner_dot). The outer ring carries no signal
+                # and renders as either a filled or a stroked drawing
+                # depending on the PDF family, so we ignore it entirely.
+                selected_label: Optional[str] = None
+                ambiguous = False
+                for pno, rect, label in all_anchors:
+                    page = doc[pno]
+                    drawings = page.get_drawings()
+                    anchor_cy = (rect.y0 + rect.y1) / 2.0
+                    if self._has_inner_dot(
+                        drawings, rect, anchor_cy, max_left_offset, y_tol
                     ):
-                        continue
-                    if not (r.x1 <= rect.x0 and r.x0 >= rect.x0 - max_left_offset):
-                        continue
-                    rings.append(r)
-                if not rings:
+                        if selected_label is not None:
+                            ambiguous = True
+                            break
+                        selected_label = label
+                # A page with multiple selected dots is ambiguous; skip it and
+                # try the next candidate page rather than committing.
+                if ambiguous:
                     continue
+                if selected_label is not None:
+                    return selected_label
 
-                rings.sort(key=lambda r: abs((r.y0 + r.y1) / 2.0 - anchor_cy))
-                ring = rings[0]
-                ring_cy = (ring.y0 + ring.y1) / 2.0
-                if abs(ring_cy - anchor_cy) > ring_y_distance_max:
-                    continue
-
-                has_inner = any(
-                    d.get("type") == "f"
-                    and d.get("rect") is not None
-                    and inner_min <= d["rect"].width <= inner_max
-                    and inner_min <= d["rect"].height <= inner_max
-                    and d["rect"].x0 >= ring.x0
-                    and d["rect"].x1 <= ring.x1
-                    and d["rect"].y0 >= ring.y0
-                    and d["rect"].y1 <= ring.y1
-                    for d in drawings
-                )
-                if has_inner:
-                    if selected_label is not None:
-                        return None
-                    selected_label = label
-            return selected_label
+            return None
         finally:
             doc.close()
 
@@ -595,6 +667,12 @@ class MiscPDFExtractor:
         that band is a small filled square inside the inner-fill size
         window. Returns 0 if no inner fill is found, None if the labels
         can't be matched.
+
+        Label matching is by substring (not exact equality): the section
+        labels frequently wrap mid-line in the flattened text (e.g. the long
+        ICF/IID heading), so an exact-equality match on `next_section_label`
+        would silently fail and let the search band overrun to end-of-page,
+        catching unrelated radio fills from the following section.
         """
         if fitz is None:
             return None
@@ -618,12 +696,12 @@ class MiscPDFExtractor:
                     for line in block.get("lines", []):
                         for s in line.get("spans", []):
                             stripped = s["text"].strip().lower()
-                            if parent_y is None and stripped == target:
+                            if parent_y is None and target in stripped:
                                 parent_y = s["bbox"][1]
                             elif (
                                 next_y is None
                                 and parent_y is not None
-                                and stripped == next_target
+                                and next_target in stripped
                             ):
                                 next_y = s["bbox"][1]
                 if parent_y is None:
@@ -696,7 +774,11 @@ class MiscPDFExtractor:
                 continue
             if stripped.startswith("1. Request Information"):
                 break
-            if re.match(r"^[A-Z]\.\s", stripped):
+            # Section-letter line ("F.") marks the next section. Match both
+            # the "F. Heading" form and a bare "F." that sits alone on its
+            # own line (the next section's letter precedes its heading in
+            # some flattened renders, e.g. IN.0378's empty ICF/IID limits).
+            if re.match(r"^[A-Z]\.(\s|$)", stripped):
                 break
             out.append(stripped)
         return " ".join(out).strip()
@@ -719,6 +801,46 @@ class MiscPDFExtractor:
         flattened PDFs that fall through the other paths still resolve.
         """
         return self._value_after_labeled_colon("Program Title")
+
+    @property
+    def waiver_description(self) -> Optional[str]:
+        """Section 2: Brief Waiver Description (free text).
+
+        Mirrors the selfdirection_description (E-1-a) pattern: bound
+        the body between the prompt's tail sentence and the next-
+        section header. The prompt sentence wraps mid-line in pypdf
+        output (after "objectives,"), so the start anchor spans the
+        whole prompt with `[\\s\\S]*?` between key phrases. Footer
+        noise (page number, application title, print URL, date stamp)
+        is stripped via _PRINT_FOOTER_RE.
+        """
+        prompt_re = re.compile(
+            r"briefly\s+describe\s+the\s+purpose\s+of\s+the\s+waiver[\s\S]*?"
+            r"service\s+delivery\s+methods\.",
+            re.IGNORECASE,
+        )
+        end_re = re.compile(
+            r"3\.\s*Components\s+of\s+the\s+Waiver\s+Request",
+            re.IGNORECASE,
+        )
+        m_start = prompt_re.search(self._text)
+        if not m_start:
+            return None
+        m_end = end_re.search(self._text, m_start.end())
+        if not m_end:
+            return None
+        body = self._text[m_start.end():m_end.start()]
+        cleaned_lines = []
+        for line in body.splitlines():
+            stripped = line.strip()
+            if not stripped:
+                continue
+            if _PRINT_FOOTER_RE.match(stripped):
+                continue
+            cleaned_lines.append(stripped)
+        if not cleaned_lines:
+            return None
+        return "\n".join(cleaned_lines)
 
     @property
     def effective_date(self) -> Optional[str]:
@@ -764,17 +886,50 @@ class MiscPDFExtractor:
         """
         return self._value_after_labeled_colon("Type of Waiver")
 
+    def _loc_parent_selected(
+        self,
+        box_label: str,
+        parent_label: str,
+        next_section_label: str,
+        box_substring: bool = False,
+    ) -> Optional[int]:
+        """Resolve a top-level LOC checkbox (Hospital / NF / ICF-IID).
+
+        Two PDF families render these differently:
+        - Some put a real check-mark in the parent box itself, detectable by
+          interior pixel density (`_detect_left_checkbox`).
+        - Others leave the parent box an empty outline regardless of state and
+          carry the signal one level down on a sub-option radio inner-fill
+          (`_loc_section_selected`).
+
+        We try the parent box first (it is correct for both observed samples)
+        and fall back to the sub-option scan only when the box reads unchecked
+        or can't be located, so the always-empty-parent family is still
+        covered. Returns 1 if either signal is positive.
+        """
+        box = self._detect_left_checkbox(box_label, substring_match=box_substring)
+        if box == 1:
+            return 1
+        sub = self._loc_section_selected(
+            parent_label=parent_label,
+            next_section_label=next_section_label,
+        )
+        if sub == 1:
+            return 1
+        # Neither signal is positive: prefer the concrete 0 from the box
+        # detector, falling back to the sub-option result when the box could
+        # not be located.
+        return box if box is not None else sub
+
     @property
     def hospital_loc(self) -> Optional[int]:
         """Section 1-F: Hospital Level of Care (parent checkbox).
 
-        In older flattened CMS templates the three top-level LOC checkboxes
-        (Hospital, Nursing Facility, ICF/IID) all render as stroked outlines
-        regardless of state; the real selection signal is the inner-fill on
-        one of the sub-option radios below. See _loc_section_selected for
-        the detection mechanic.
+        See _loc_parent_selected for the detection mechanic (parent-box pixel
+        density, falling back to a sub-option inner-fill scan).
         """
-        return self._loc_section_selected(
+        return self._loc_parent_selected(
+            box_label="Hospital",
             parent_label="Hospital",
             next_section_label="Nursing Facility",
         )
@@ -799,11 +954,10 @@ class MiscPDFExtractor:
     def nursing_facility_loc(self) -> Optional[int]:
         """Section 1-F: Nursing Facility Level of Care (parent checkbox).
 
-        Same flattened-template caveat as hospital_loc — detect via any
-        selected sub-option radio between "Nursing Facility" and the next
-        section header ("Intermediate Care Facility").
+        See _loc_parent_selected for the detection mechanic.
         """
-        return self._loc_section_selected(
+        return self._loc_parent_selected(
+            box_label="Nursing Facility",
             parent_label="Nursing Facility",
             next_section_label="Intermediate Care Facility for Individuals",
         )
@@ -826,12 +980,15 @@ class MiscPDFExtractor:
     def ifc_loc(self) -> Optional[int]:
         """Section 1-F: ICF/IID Level of Care (parent checkbox).
 
-        Same flattened-template caveat as hospital_loc. End marker is the
-        next major section header ("1. Request Information" — the section
-        repeats with its (N of 3) page-counter pattern), since ICF is the
-        last LOC option.
+        See _loc_parent_selected for the detection mechanic. The box label is
+        a substring match because the full ICF/IID heading wraps mid-line in
+        the flattened text. The sub-option fallback's end marker is the next
+        major section header ("1. Request Information"), since ICF is the last
+        LOC option.
         """
-        return self._loc_section_selected(
+        return self._loc_parent_selected(
+            box_label="Intermediate Care Facility for Individuals with Intellectual",
+            box_substring=True,
             parent_label="Intermediate Care Facility for Individuals with Intellectual Disabilities (ICF/IID) (as defined in 42 CFR",
             next_section_label="1. Request Information",
         )
@@ -946,6 +1103,7 @@ class MiscPDFExtractor:
             ],
             section_start="Participant-Direction of Services. When the State",
             section_end="Participant Rights.",
+            max_pages=2,
         )
 
     @property
@@ -1109,20 +1267,27 @@ class MiscPDFExtractor:
 
         Two options. Returned label matches the dictionary canonical text
         (lowercase "state").
+
+        The match needles include "that it serves" so they bind to the
+        option lines, not the section prompt ("Indicate whether the state
+        limits the number of participants ...") which otherwise captures
+        the "limits" anchor on a dotless line. max_pages=2 because the
+        options can render on the page after the prompt (e.g. UT1666).
         """
         return self._detect_vertical_radio(
             anchors=[
                 (
-                    "The State does not limit the number of participants",
+                    "The State does not limit the number of participants that it serves",
                     "The state does not limit the number of participants that it serves at any point in time during a waiver year.",
                 ),
                 (
-                    "The State limits the number of participants",
+                    "The State limits the number of participants that it serves",
                     "The state limits the number of participants that it serves at any point in time during a waiver year.",
                 ),
             ],
-            section_start="b. Limitation on the Number of Participants Served at Any Point in Time",
+            section_start="Limitation on the Number of Participants Served at Any Point in Time",
             section_end="Table: B-3-b",
+            max_pages=2,
         )
 
     @property
@@ -1144,8 +1309,8 @@ class MiscPDFExtractor:
                     "The waiver is subject to a phase-in or phase-out schedule that is included in Attachment #1 to Appendix B-3. This schedule constitutes an intra-year limitation on the number of participants who are served in the waiver.",
                 ),
             ],
-            section_start="d. Scheduled Phase-In or Phase-Out",
-            section_end="e. Allocation of Waiver Capacity",
+            section_start="Scheduled Phase-In or Phase-Out",
+            section_end="Allocation of Waiver Capacity",
             max_pages=2,
         )
 
@@ -1156,8 +1321,14 @@ class MiscPDFExtractor:
         The state's free-text answer to "Specify the policies that apply
         to the selection of individuals for entrance to the waiver:".
         Mirrors text_top_extractor.entrantselection in returning a
-        single space-joined string. Terminates at the next major section
-        header.
+        single space-joined string. The answer may begin on the header
+        page and/or spill onto the next page(s) (e.g. MN.0166 puts the
+        entire answer on the page after the prompt), so collection walks
+        up to 3 pages and stops at the next major section header. Page
+        footer noise (page number, application title, print URL, date
+        stamp) is dropped via _PRINT_FOOTER_RE — without which a header
+        page that holds only the prompt would otherwise yield the footer
+        date.
         """
         if fitz is None:
             return ""
@@ -1166,80 +1337,87 @@ class MiscPDFExtractor:
         except Exception:
             return ""
 
+        terminators = (
+            "Appendix B:",
+            "B-3: Number of Individuals Served",
+            "B-4:",
+            "g. ",
+        )
         try:
-            for page in doc:
-                if "f. Selection of Entrants to the Waiver" not in page.get_text():
-                    continue
-                td = page.get_text("dict")
-                # Find y_start: end of the question label ("waiver:" line).
-                # If "waiver:" not on this page, fall back to the y of the
-                # "Selection of Entrants" section header.
-                section_y = None
-                waiver_label_y = None
-                for block in td.get("blocks", []):
-                    if block.get("type") != 0:
-                        continue
-                    for line in block.get("lines", []):
-                        line_text = "".join(
-                            s["text"] for s in line.get("spans", [])
-                        )
-                        if section_y is None and "f. Selection of Entrants to the Waiver" in line_text:
-                            section_y = line["bbox"][1]
-                        elif (
-                            section_y is not None
-                            and waiver_label_y is None
-                            and line_text.strip().lower() == "waiver:"
-                        ):
-                            waiver_label_y = line["bbox"][3]
-                if section_y is None:
-                    return ""
-                y_start = waiver_label_y if waiver_label_y is not None else section_y
+            # Find the page carrying the section header.
+            start_pno: Optional[int] = None
+            for pno, page in enumerate(doc):
+                if "Selection of Entrants to the Waiver" in page.get_text():
+                    start_pno = pno
+                    break
+            if start_pno is None:
+                return ""
 
-                # Collect lines between y_start and the next section
-                # header. Skip blank, glyph-only, and noise tokens.
-                value_lines: List[tuple] = []  # (y, stripped_text)
-                terminators = (
-                    "Appendix B:",
-                    "B-3: Number of Individuals Served",
-                    "B-4:",
-                    "g. ",
-                )
-                for block in td.get("blocks", []):
-                    if block.get("type") != 0:
+            # y_start on the header page: end of the "waiver:" prompt line,
+            # else the section-header line.
+            td0 = doc[start_pno].get_text("dict")
+            section_y = None
+            waiver_label_y = None
+            for block in td0.get("blocks", []):
+                if block.get("type") != 0:
+                    continue
+                for line in block.get("lines", []):
+                    line_text = "".join(s["text"] for s in line.get("spans", []))
+                    if section_y is None and "Selection of Entrants to the Waiver" in line_text:
+                        section_y = line["bbox"][1]
+                    elif (
+                        section_y is not None
+                        and waiver_label_y is None
+                        and line_text.strip().lower() == "waiver:"
+                    ):
+                        waiver_label_y = line["bbox"][3]
+            if section_y is None:
+                return ""
+            y_start = waiver_label_y if waiver_label_y is not None else section_y
+
+            # Collect value lines in (page, y) reading order, starting below
+            # y_start on the header page and from the top of later pages,
+            # until a terminator header is hit.
+            value_lines: List[tuple] = []  # (page_idx, y, text)
+            for pno in range(start_pno, min(start_pno + 3, doc.page_count)):
+                td = doc[pno].get_text("dict")
+                floor = y_start if pno == start_pno else -1.0
+                page_lines = [
+                    line
+                    for block in td.get("blocks", [])
+                    if block.get("type") == 0
+                    for line in block.get("lines", [])
+                ]
+                page_lines.sort(key=lambda l: l["bbox"][1])
+                hit_terminator = False
+                for line in page_lines:
+                    if line["bbox"][1] <= floor:
                         continue
-                    for line in block.get("lines", []):
-                        if line["bbox"][1] <= y_start:
-                            continue
-                        line_text = "".join(
-                            s["text"] for s in line.get("spans", [])
-                        )
-                        stripped = re.sub(
-                            r"[-]", "", line_text
-                        ).strip()
-                        if not stripped:
-                            continue
-                        if any(stripped.startswith(t) for t in terminators):
-                            return self._join_lines(value_lines)
-                        if stripped in ("on", "Off", "Yes"):
-                            continue
-                        if stripped.startswith("svapdx"):
-                            continue
-                        if stripped.startswith(
-                            "Application for 1915(c) HCBS Waiver"
-                        ) or stripped.startswith("https://"):
-                            continue
-                        value_lines.append((line["bbox"][1], stripped))
-                return self._join_lines(value_lines)
+                    line_text = "".join(s["text"] for s in line.get("spans", []))
+                    stripped = re.sub(r"[-]", "", line_text).strip()
+                    if not stripped:
+                        continue
+                    if any(stripped.startswith(t) for t in terminators):
+                        hit_terminator = True
+                        break
+                    if _PRINT_FOOTER_RE.match(stripped):
+                        continue
+                    # Bare section-letter line ("e." / "f.") precedes the next
+                    # section in this template family.
+                    if re.match(r"^[A-Za-z]\.$", stripped):
+                        continue
+                    if stripped in ("on", "Off", "Yes"):
+                        continue
+                    if stripped.startswith("svapdx"):
+                        continue
+                    value_lines.append((pno, line["bbox"][1], stripped))
+                if hit_terminator:
+                    break
+
+            value_lines.sort(key=lambda t: (t[0], t[1]))
+            return " ".join(t for _, _, t in value_lines).strip()
         finally:
             doc.close()
-        return ""
-
-    @staticmethod
-    def _join_lines(value_lines: List[tuple]) -> str:
-        """Sort (y, text) tuples by y and join into one space-separated
-        string."""
-        value_lines.sort(key=lambda t: t[0])
-        return " ".join(t for _, t in value_lines).strip()
 
     def _extract_b3_year_table(
         self,
@@ -1382,7 +1560,7 @@ class MiscPDFExtractor:
 
         a = self._extract_b3_year_table(
             table_marker="Table: B-3-a",
-            end_marker="b. Limitation on the Number",
+            end_marker="Limitation on the Number of Participants Served",
         )
         b = self._extract_b3_year_table(
             table_marker="Table: B-3-b",
@@ -1473,7 +1651,10 @@ class MiscPDFExtractor:
                         for row_idx, anchor in self._APPX_B4_ELIGIBILITY_ANCHORS:
                             if row_idx in row_locations:
                                 continue
-                            if anchor in line_text:
+                            # Case-insensitive: row 4 renders "Optional state
+                            # supplement recipients" (lowercase) in many PDFs
+                            # vs the canonical "Optional State ..." anchor.
+                            if anchor.lower() in line_text.lower():
                                 row_locations[row_idx] = (
                                     pno,
                                     fitz.Rect(line["bbox"]),
@@ -1508,6 +1689,12 @@ class MiscPDFExtractor:
                     out[f"eligibility_{row_idx}"] = (
                         self._checkbox_filled_by_pixels(page, box)
                     )
+                else:
+                    # No stroked box → glyph-checkbox family (ZapfDingbats
+                    # check-mark left of the label, absent when unchecked).
+                    out[f"eligibility_{row_idx}"] = (
+                        1 if self._dingbat_checked(page, label_rect) else 0
+                    )
         finally:
             doc.close()
 
@@ -1519,7 +1706,9 @@ class MiscPDFExtractor:
                     "100% of the Federal poverty level (FPL)",
                 ),
                 (
-                    "% of FPL, which is lower than 100% of FPL",
+                    # Leading "%" can't anchor under the helper's \b word
+                    # boundary, so match from the first word instead.
+                    "of FPL, which is lower than 100% of FPL",
                     "% of FPL, which is lower than 100% of FPL.",
                 ),
             ],
@@ -1682,7 +1871,7 @@ class MiscPDFExtractor:
                  "Other"),
             ],
             section_start="Responsibility for Performing",
-            section_end="c. Qualifications of Individuals Performing Initial Evaluation",
+            section_end="Qualifications of Individuals Performing Initial Evaluation",
             max_pages=2,
         )
 
@@ -1696,8 +1885,8 @@ class MiscPDFExtractor:
                 ("A different instrument is used to determine the level of care for the waiver",
                  "A different instrument is used to determine the level of care for the waiver than for institutional care under the state plan."),
             ],
-            section_start="e. Level of Care Instrument(s)",
-            section_end="f. Process for Level of Care Evaluation",
+            section_start="Level of Care Instrument(s)",
+            section_end="Process for Level of Care Evaluation",
             max_pages=2,
         )
 
@@ -1711,14 +1900,127 @@ class MiscPDFExtractor:
                 ("Every twelve months", "Every twelve months"),
                 ("Other schedule", "Other schedule"),
             ],
-            section_start="g. Reevaluation Schedule",
-            section_end="h. Qualifications of Individuals Who Perform Reevaluations",
+            section_start="Reevaluation Schedule",
+            section_end="Qualifications of Individuals Who Perform Reevaluations",
             max_pages=2,
+        )
+
+    # ==================================================================
+    # ATTACHMENT #1 — TRANSITION PLAN (10 vertically-stacked checkboxes)
+    # ==================================================================
+
+    @property
+    def transitionplan_1(self) -> Optional[int]:
+        """Attachment #1 Transition Plan checkbox 1: Replacing an approved waiver."""
+        return self._detect_left_checkbox(
+            label="Replacing an approved waiver with this waiver.",
+            substring_match=True,
+        )
+
+    @property
+    def transitionplan_2(self) -> Optional[int]:
+        """Attachment #1 Transition Plan checkbox 2: Combining waivers."""
+        return self._detect_left_checkbox(
+            label="Combining waivers.",
+            substring_match=True,
+        )
+
+    @property
+    def transitionplan_3(self) -> Optional[int]:
+        """Attachment #1 Transition Plan checkbox 3: Splitting one waiver into two."""
+        return self._detect_left_checkbox(
+            label="Splitting one waiver into two waivers.",
+            substring_match=True,
+        )
+
+    @property
+    def transitionplan_4(self) -> Optional[int]:
+        """Attachment #1 Transition Plan checkbox 4: Eliminating a service."""
+        return self._detect_left_checkbox(
+            label="Eliminating a service.",
+            substring_match=True,
+        )
+
+    @property
+    def transitionplan_5(self) -> Optional[int]:
+        """Attachment #1 Transition Plan checkbox 5: Adding/decreasing individual cost limit."""
+        return self._detect_left_checkbox(
+            label="Adding or decreasing an individual cost limit pertaining to eligibility.",
+            substring_match=True,
+        )
+
+    @property
+    def transitionplan_6(self) -> Optional[int]:
+        """Attachment #1 Transition Plan checkbox 6: Adding/decreasing service limits."""
+        return self._detect_left_checkbox(
+            label="Adding or decreasing limits to a service or a set of services",
+            substring_match=True,
+        )
+
+    @property
+    def transitionplan_7(self) -> Optional[int]:
+        """Attachment #1 Transition Plan checkbox 7: Reducing unduplicated participant count (Factor C)."""
+        return self._detect_left_checkbox(
+            label="Reducing the unduplicated count of participants",
+            substring_match=True,
+        )
+
+    @property
+    def transitionplan_8(self) -> Optional[int]:
+        """Attachment #1 Transition Plan checkbox 8: Adding/decreasing participant-count limitation."""
+        return self._detect_left_checkbox(
+            label="Adding new, or decreasing, a limitation on the number of participants served",
+            substring_match=True,
+        )
+
+    @property
+    def transitionplan_9(self) -> Optional[int]:
+        """Attachment #1 Transition Plan checkbox 9: Changes causing eligibility loss / waiver transfer.
+
+        Item 9 wraps after 'another' in pypdf rendering. Anchor uses a
+        unique tail substring before the wrap; distinct from item 10
+        which shares the 'Making any changes that could result in'
+        prefix.
+        """
+        return self._detect_left_checkbox(
+            label="could result in some participants losing eligibility",
+            substring_match=True,
+        )
+
+    @property
+    def transitionplan_10(self) -> Optional[int]:
+        """Attachment #1 Transition Plan checkbox 10: Changes causing reduced services."""
+        return self._detect_left_checkbox(
+            label="could result in reduced services to participants",
+            substring_match=True,
         )
 
     # ==================================================================
     # APPENDIX E-1 — PARTICIPANT DIRECTION OF SERVICES (overview)
     # ==================================================================
+
+    # Sentinel written into every Appendix E field when the waiver opts out
+    # of Appendix E. A literal marker (rather than blank) lets a reviewer see
+    # at a glance that the section is intentionally not present and does not
+    # need re-validation.
+    _APPENDIX_E_ABSENT = "No section"
+
+    def _appendix_e_submitted(self) -> bool:
+        """False when the waiver opts out of Appendix E (no participant direction).
+
+        Flattened templates stamp the E-1 overview pages with
+        "...you do not need to submit Appendix E." when Appendix E-0 indicates
+        participant direction is not offered; the E-1 sections are then blank
+        skeletons. Every Appendix E member short-circuits to the
+        `_APPENDIX_E_ABSENT` marker ("No section") in that case, so the
+        emptiness is deliberate rather than a side effect of detection failing
+        on a blank section.
+        """
+        if not hasattr(self, "_appx_e_submitted_cache"):
+            self._appx_e_submitted_cache = (
+                "you do not need to submit appendix e" not in self._text.lower()
+            )
+        return self._appx_e_submitted_cache
 
     @property
     def selfdirection_description(self) -> Optional[str]:
@@ -1733,6 +2035,8 @@ class MiscPDFExtractor:
         May span two pages — strip page-footer noise (page number,
         application title, print URL, date stamp) via _PRINT_FOOTER_RE.
         """
+        if not self._appendix_e_submitted():
+            return self._APPENDIX_E_ABSENT
         prompt_re = re.compile(
             r"other\s+relevant\s+information\s+about\s+the\s+waiver['’]s\s+approach\s+to\s+participant\s+direction\.?",
             re.IGNORECASE,
@@ -1768,6 +2072,8 @@ class MiscPDFExtractor:
         MISC output is consistent with the AcroForm/HTML/text extractors'
         merged output.
         """
+        if not self._appendix_e_submitted():
+            return self._APPENDIX_E_ABSENT
         return self._detect_vertical_radio(
             anchors=[
                 ("Participant: Employer Authority",
@@ -1777,14 +2083,16 @@ class MiscPDFExtractor:
                 ("Both Authorities",
                  "Both Authorities"),
             ],
-            section_start="b. Participant Direction Opportunities",
-            section_end="c. Availability of Participant Direction",
+            section_start="Participant Direction Opportunities",
+            section_end="Availability of Participant Direction",
             max_pages=2,
         )
 
     @property
     def sd_livarrngmt_1(self) -> Optional[int]:
         """Appendix E-1-c: Available in own/family-member residence."""
+        if not self._appendix_e_submitted():
+            return self._APPENDIX_E_ABSENT
         return self._detect_left_checkbox(
             label="live in their own private residence",
             substring_match=True,
@@ -1793,6 +2101,8 @@ class MiscPDFExtractor:
     @property
     def sd_livarrngmt_2(self) -> Optional[int]:
         """Appendix E-1-c: Available in <4-person residential settings."""
+        if not self._appendix_e_submitted():
+            return self._APPENDIX_E_ABSENT
         return self._detect_left_checkbox(
             label="reside in other living arrangements",
             substring_match=True,
@@ -1801,6 +2111,8 @@ class MiscPDFExtractor:
     @property
     def sd_livarrngmt_3(self) -> Optional[int]:
         """Appendix E-1-c: Available in other (specified) living arrangements."""
+        if not self._appendix_e_submitted():
+            return self._APPENDIX_E_ABSENT
         return self._detect_left_checkbox(
             label="available to persons in the following other living arrangements",
             substring_match=True,
@@ -1815,6 +2127,8 @@ class MiscPDFExtractor:
         downstream consumers comparing MISC vs HTML/text/acroform on
         sd_election must reconcile the two formats.
         """
+        if not self._appendix_e_submitted():
+            return self._APPENDIX_E_ABSENT
         return self._detect_vertical_radio(
             anchors=[
                 ("Waiver is designed to support only individuals who want to direct",
@@ -1824,150 +2138,157 @@ class MiscPDFExtractor:
                 ("The waiver is designed to offer participants",
                  "The waiver is designed to offer participants (or their representatives) the opportunity to direct some or all of their services, subject to the following criteria specified by the state. Alternate service delivery methods are available for participants who decide not to direct their services or do not meet the criteria."),
             ],
-            section_start="d. Election of Participant Direction",
+            section_start="Election of Participant Direction",
             section_end="E-1: Overview (4 of 13)",
             max_pages=2,
         )
 
-    @property
-    def sd_services(self) -> Dict[str, Dict[str, Optional[int]]]:
-        """Appendix E-1-g: Participant-Directed Services table.
+    def _extract_sd_services(self) -> Dict[str, Any]:
+        """Appendix E-1-g: Participant-Directed Services table (multi-page).
 
-        Dynamic-row table. Returns a dict mapping each waiver service
-        name to {"ea": <0/1/None>, "ba": <0/1/None>} (Employer Authority
-        / Budget Authority checkboxes). Row order preserved.
-        Returns {} if the section's header row cannot be located.
+        Returns three parallel-list columns (row order preserved):
+            sd_service_1     -> [service name, ...]
+            sd_service_1_ea  -> [Employer Authority 0/1/None, ...]
+            sd_service_1_ba  -> [Budget Authority 0/1/None, ...]
 
-        V1 limitation: service-name labels are assumed to be single-line.
-        A long label that wraps onto a second visual line will create a
-        ghost row with no checkboxes; fix is to merge no-checkbox rows
-        into the prior row (deferred).
+        The table can split across the E-1 "(6 of 13)" → "(7 of 13)" page
+        boundary, with the "Waiver Service | Employer Authority | Budget
+        Authority" column header repeated on each page; rows are collected
+        in page + reading order across the whole section. Empty lists when
+        the section header can't be located; the _APPENDIX_E_ABSENT marker
+        when the waiver opts out of Appendix E.
+
+        V1 limitation: service-name labels are assumed single-line (a label
+        wrapping to a second visual line yields a checkbox-less ghost row).
         """
+        keys = ("sd_service_1", "sd_service_1_ea", "sd_service_1_ba")
+        if not self._appendix_e_submitted():
+            return {k: self._APPENDIX_E_ABSENT for k in keys}
+        empty: Dict[str, Any] = {k: [] for k in keys}
         if fitz is None:
-            return {}
+            return empty
         try:
             doc = fitz.open(str(self.pdf_path))
         except Exception:
-            return {}
+            return empty
 
         SECTION_START = "E-1: Overview (6 of 13)"
         SECTION_END = "E-1: Overview (7 of 13)"
 
+        names: List[str] = []
+        eas: List[Optional[int]] = []
+        bas: List[Optional[int]] = []
+
         try:
-            # 1. Locate the page containing the E-1-g section-start header.
             start_page: Optional[int] = None
             for pno, page in enumerate(doc):
                 if SECTION_START in page.get_text():
                     start_page = pno
                     break
             if start_page is None:
-                return {}
+                return empty
 
-            page = doc[start_page]
-            td = page.get_text("dict")
+            # Walk from the start page forward; the column header repeats on
+            # each page the table spans. Stop after the page carrying the
+            # section-end header (the table's lower bound).
+            for pno in range(start_page, min(start_page + 3, doc.page_count)):
+                page = doc[pno]
+                td = page.get_text("dict")
 
-            # 2. Find the y of section_start (top of section) and
-            #    section_end (where E-1 (7 of 13) header begins).
-            section_start_y: Optional[float] = None
-            section_end_y: float = float("inf")
-            for block in td.get("blocks", []):
-                if block.get("type") != 0:
-                    continue
-                for line in block.get("lines", []):
-                    line_text = "".join(s["text"] for s in line.get("spans", []))
-                    if section_start_y is None and SECTION_START in line_text:
-                        section_start_y = line["bbox"][3]
-                    elif (
-                        section_end_y == float("inf")
-                        and SECTION_END in line_text
-                    ):
-                        section_end_y = line["bbox"][1]
-            if section_start_y is None:
-                return {}
-
-            # 3. Find the column header row (line containing "Employer
-            #    Authority" / "Budget Authority") and capture each
-            #    header span's x-center. The header sits between
-            #    section_start_y and the first service row.
-            header_bottom_y: Optional[float] = None
-            ea_x: Optional[float] = None
-            ba_x: Optional[float] = None
-            for block in td.get("blocks", []):
-                if block.get("type") != 0:
-                    continue
-                for line in block.get("lines", []):
-                    ly0 = line["bbox"][1]
-                    if not (section_start_y < ly0 < section_end_y):
+                # y bounds for this page. On the start page the table begins
+                # below the "(6 of 13)" header; on later pages it begins at
+                # the top. The section ends at the "(7 of 13)" header line
+                # (wherever it appears).
+                y_start = 0.0
+                y_end = float("inf")
+                for block in td.get("blocks", []):
+                    if block.get("type") != 0:
                         continue
-                    line_text = "".join(s["text"] for s in line.get("spans", []))
-                    if (
-                        "Employer Authority" in line_text
-                        and "Budget Authority" in line_text
-                    ):
-                        header_bottom_y = line["bbox"][3]
-                        for s in line.get("spans", []):
-                            stext = s["text"]
-                            cx = (s["bbox"][0] + s["bbox"][2]) / 2.0
-                            if ea_x is None and "Employer" in stext:
-                                ea_x = cx
-                            if ba_x is None and "Budget" in stext:
-                                ba_x = cx
+                    for line in block.get("lines", []):
+                        lt = "".join(s["text"] for s in line.get("spans", []))
+                        if pno == start_page and SECTION_START in lt:
+                            y_start = line["bbox"][3]
+                        if SECTION_END in lt and y_end == float("inf"):
+                            if pno != start_page or line["bbox"][1] > y_start:
+                                y_end = line["bbox"][1]
+
+                # Locate the repeated EA/BA column header on this page.
+                header_bottom_y: Optional[float] = None
+                ea_x: Optional[float] = None
+                ba_x: Optional[float] = None
+                for block in td.get("blocks", []):
+                    if block.get("type") != 0:
+                        continue
+                    for line in block.get("lines", []):
+                        if not (y_start < line["bbox"][1] < y_end):
+                            continue
+                        lt = "".join(s["text"] for s in line.get("spans", []))
+                        if "Employer Authority" in lt and "Budget Authority" in lt:
+                            header_bottom_y = line["bbox"][3]
+                            for s in line.get("spans", []):
+                                cx = (s["bbox"][0] + s["bbox"][2]) / 2.0
+                                if ea_x is None and "Employer" in s["text"]:
+                                    ea_x = cx
+                                if ba_x is None and "Budget" in s["text"]:
+                                    ba_x = cx
+                            break
+                    if header_bottom_y is not None:
                         break
-                if header_bottom_y is not None:
+
+                if header_bottom_y is not None and ea_x is not None and ba_x is not None:
+                    label_x_upper = ea_x - 20.0
+                    rows: List[tuple] = []  # (y_center, label_text)
+                    for block in td.get("blocks", []):
+                        if block.get("type") != 0:
+                            continue
+                        for line in block.get("lines", []):
+                            ly0 = line["bbox"][1]
+                            ly1 = line["bbox"][3]
+                            if not (header_bottom_y < ly0 < y_end):
+                                continue
+                            if not (60.0 < line["bbox"][0] < label_x_upper):
+                                continue
+                            text = "".join(
+                                s["text"] for s in line.get("spans", [])
+                            ).strip()
+                            if not text or _PRINT_FOOTER_RE.match(text):
+                                continue
+                            if text.startswith("Appendix E:") or "E-1: Overview" in text:
+                                continue
+                            rows.append(((ly0 + ly1) / 2.0, text))
+
+                    drawings = page.get_drawings()
+                    for row_cy, label in rows:
+                        ea_state: Optional[int] = None
+                        ba_state: Optional[int] = None
+                        for d in drawings:
+                            if d.get("type") != "s":
+                                continue
+                            r = d.get("rect")
+                            if r is None:
+                                continue
+                            if not (8.0 <= r.width <= 11.0 and 8.0 <= r.height <= 11.0):
+                                continue
+                            if abs((r.y0 + r.y1) / 2.0 - row_cy) > 6.0:
+                                continue
+                            box_cx = (r.x0 + r.x1) / 2.0
+                            if abs(box_cx - ea_x) < 15.0:
+                                ea_state = self._checkbox_filled_by_pixels(page, r)
+                            elif abs(box_cx - ba_x) < 15.0:
+                                ba_state = self._checkbox_filled_by_pixels(page, r)
+                        names.append(label)
+                        eas.append(ea_state)
+                        bas.append(ba_state)
+
+                # Stop once the section-end header was seen on this page.
+                if y_end != float("inf"):
                     break
-            if header_bottom_y is None or ea_x is None or ba_x is None:
-                return {}
 
-            # 4. Collect service rows: lines between the column header
-            #    and section_end whose x-start sits in the service-name
-            #    column. Service-name labels in CO start at x≈86 (left
-            #    of the EA-column-header x≈300). Use the EA header x as
-            #    the upper bound so labels never bleed into checkbox
-            #    columns. One row per visual line in v1.
-            rows: List[tuple] = []  # (y_center, label_text)
-            label_x_upper = ea_x - 20.0
-            for block in td.get("blocks", []):
-                if block.get("type") != 0:
-                    continue
-                for line in block.get("lines", []):
-                    ly0 = line["bbox"][1]
-                    ly1 = line["bbox"][3]
-                    if not (header_bottom_y < ly0 < section_end_y):
-                        continue
-                    lx0 = line["bbox"][0]
-                    if not (60.0 < lx0 < label_x_upper):
-                        continue
-                    text = "".join(s["text"] for s in line.get("spans", [])).strip()
-                    if not text:
-                        continue
-                    cy = (ly0 + ly1) / 2.0
-                    rows.append((cy, text))
-
-            # 5. For each row, find 9×9 stroked boxes within y±6, match
-            #    each to EA or BA by x-distance (≤15px), and read fill.
-            drawings = page.get_drawings()
-            result: Dict[str, Dict[str, Optional[int]]] = {}
-            for row_cy, label in rows:
-                ea_state: Optional[int] = None
-                ba_state: Optional[int] = None
-                for d in drawings:
-                    if d.get("type") != "s":
-                        continue
-                    r = d.get("rect")
-                    if r is None:
-                        continue
-                    if not (8.0 <= r.width <= 11.0 and 8.0 <= r.height <= 11.0):
-                        continue
-                    box_cy = (r.y0 + r.y1) / 2.0
-                    if abs(box_cy - row_cy) > 6.0:
-                        continue
-                    box_cx = (r.x0 + r.x1) / 2.0
-                    if abs(box_cx - ea_x) < 15.0:
-                        ea_state = self._checkbox_filled_by_pixels(page, r)
-                    elif abs(box_cx - ba_x) < 15.0:
-                        ba_state = self._checkbox_filled_by_pixels(page, r)
-                result[label] = {"ea": ea_state, "ba": ba_state}
-            return result
+            return {
+                "sd_service_1": names,
+                "sd_service_1_ea": eas,
+                "sd_service_1_ba": bas,
+            }
         finally:
             doc.close()
 
@@ -1981,6 +2302,8 @@ class MiscPDFExtractor:
         down — default y_tol=4 would let either box match either label
         because the rows are tightly stacked (~2px gap).
         """
+        if not self._appendix_e_submitted():
+            return self._APPENDIX_E_ABSENT
         return self._detect_left_checkbox(
             label="Governmental entities",
             y_tol=2.0,
@@ -1989,6 +2312,8 @@ class MiscPDFExtractor:
     @property
     def sd_fms_pe(self) -> Optional[int]:
         """Appendix E-1-h: Private entities furnish FMS (checkbox)."""
+        if not self._appendix_e_submitted():
+            return self._APPENDIX_E_ABSENT
         return self._detect_left_checkbox(
             label="Private entities",
             y_tol=2.0,
@@ -2006,11 +2331,15 @@ class MiscPDFExtractor:
         Trailing period in the label matches the span's literal
         " Participant/Co-Employer. " text after strip+lower.
         """
+        if not self._appendix_e_submitted():
+            return self._APPENDIX_E_ABSENT
         return self._detect_left_checkbox(label="Participant/Co-Employer.")
 
     @property
     def sd_commonlaw(self) -> Optional[int]:
         """Appendix E-2-a-i: Participant/Common Law Employer checkbox."""
+        if not self._appendix_e_submitted():
+            return self._APPENDIX_E_ABSENT
         return self._detect_left_checkbox(
             label="Participant/Common Law Employer.",
         )
@@ -2070,8 +2399,8 @@ class MiscPDFExtractor:
                 ("Yes. The State makes supplemental",
                  "yes"),
             ],
-            section_start="c. Supplemental or Enhanced Payments",
-            section_end="d. Payments to State or Local Government Providers",
+            section_start="Supplemental or Enhanced Payments",
+            section_end="Payments to State or Local Government Providers",
             max_pages=2,
         )
         if label == "yes":
@@ -2120,7 +2449,7 @@ class MiscPDFExtractor:
                     "If the state uses more than one of the above contract authorities for the delivery of waiver services, please select this option.",
                 ),
             ],
-            section_start="iii. Contracts with MCOs, PIHPs or PAHPs",
+            section_start="Contracts with MCOs, PIHPs or PAHPs",
             section_end="I-4: Non-Federal Matching Funds",
             max_pages=2,
         )
@@ -2144,8 +2473,8 @@ class MiscPDFExtractor:
                 ("As specified in Appendix C, the State furnishes",
                  "yes"),
             ],
-            section_start="a. Services Furnished in Residential Settings",
-            section_end="b. Method for Excluding",
+            section_start="Services Furnished in Residential Settings",
+            section_end="Method for Excluding",
             max_pages=2,
         )
         if label == "yes":
@@ -2166,7 +2495,11 @@ class MiscPDFExtractor:
             anchors=[
                 ("No. The State does not reimburse for the rent and food",
                  "no"),
-                ("Yes. Per 42 CFR §441.310(a)(2)(ii)",
+                # Match needle stops at "CFR" (a word char): the full
+                # "...§441.310(a)(2)(ii)" ends in ")", and the helper's
+                # trailing \b can't anchor on a non-word char, which left
+                # the Yes option undetected whenever it was selected.
+                ("Yes. Per 42 CFR",
                  "yes"),
             ],
             section_start="I-6: Payment for Rent and Food Expenses",
@@ -2265,6 +2598,8 @@ class MiscPDFExtractor:
         }
         if fitz is None:
             return out
+        if not self._appendix_e_submitted():
+            return {k: self._APPENDIX_E_ABSENT for k in out}
 
         SECTION_START = "E-1: Overview (8 of 13)"
         SECTION_END = "E-1: Overview (9 of 13)"
@@ -2400,6 +2735,8 @@ class MiscPDFExtractor:
         out.update({f"sd_numenrollees_ba{i}": "" for i in range(1, 6)})
         if fitz is None:
             return out
+        if not self._appendix_e_submitted():
+            return {k: self._APPENDIX_E_ABSENT for k in out}
 
         YEAR_RE = re.compile(r"^\s*Year\s+(\d)\s*$")
         YEAR_X_MAX = 135.0
@@ -2650,29 +2987,30 @@ class MiscPDFExtractor:
 
     # Column x-windows derived from the page-23 header positions; see
     # the plan file for the geometry survey.
-    _APPX_B1_SUBGROUP_X = (215.0, 235.0)   # SubGroup label column
+    _APPX_B1_SUBGROUP_X = (205.0, 235.0)   # SubGroup label column (PA labels at x≈208)
     _APPX_B1_INCLUDED_X_CENTER = 186.0     # Included checkbox column
     _APPX_B1_MIN_AGE_X = (362.0, 414.0)    # Minimum Age text column
     _APPX_B1_MAX_AGE_X = (425.0, 485.0)    # Maximum Age Limit text column
-    _APPX_B1_NOMAX_X_CENTER = 524.0        # No Maximum Age Limit checkbox column
     _APPX_B1_ROW_Y_TOL = 6.0
     _APPX_B1_BOX_X_TOL = 10.0
 
     def _extract_appendix_b1_table(self) -> Dict[str, Any]:
         """One geometry pass over Appendix-B-1 Section a.
 
-        Returns a dict with 14 keys: aged_group, aged_group_min,
-        aged_group_max, plus 11 other *_group flags. Checkbox values
-        are 1 / 0 / None. The two age fields are strings.
-        aged_group_max returns "No Maximum Age Limit" when the adjacent
-        checkbox in that column is checked. Cached via self._appx_b1_cache.
+        Returns a dict with 36 keys: the 12 *_group flags (1 / 0 / None),
+        plus a `<group>_min` and `<group>_max` age string for each of the
+        12 subgroups. A `<group>_max` reads "No Maximum Age Limit" when the
+        group's Included checkbox is checked but its Maximum Age cell is
+        empty (true even when the Minimum Age cell is also empty). Cached
+        via self._appx_b1_cache.
         """
         if hasattr(self, "_appx_b1_cache"):
             return self._appx_b1_cache
 
         out: Dict[str, Any] = {var: None for _, var in self._APPX_B1_SUBGROUPS}
-        out["aged_group_min"] = ""
-        out["aged_group_max"] = ""
+        for _, var in self._APPX_B1_SUBGROUPS:
+            out[f"{var}_min"] = ""
+            out[f"{var}_max"] = ""
 
         if fitz is None:
             self._appx_b1_cache = out
@@ -2685,13 +3023,28 @@ class MiscPDFExtractor:
             return out
 
         try:
-            for page in doc:
-                if "B-1: Specification of the Waiver Target Group" not in page.get_text():
-                    continue
+            start_pno: Optional[int] = None
+            for pno, page in enumerate(doc):
+                if "B-1: Specification of the Waiver Target Group" in page.get_text():
+                    start_pno = pno
+                    break
+            if start_pno is None:
+                self._appx_b1_cache = out
+                return out
+
+            # The 12-row subgroup table normally fits on one page but can
+            # split across the page boundary; walk up to 2 pages, resolving
+            # each subgroup row only once (first page it appears on wins).
+            located: set = set()
+            for pno in range(start_pno, min(start_pno + 2, doc.page_count)):
+                page = doc[pno]
                 td = page.get_text("dict")
 
-                # Locate each subgroup row's center y.
+                # Locate each not-yet-resolved subgroup row's center y and
+                # label rect (the rect is needed for the glyph-checkbox
+                # fallback used by the ZapfDingbats template family).
                 row_y: Dict[str, float] = {}
+                row_rect: Dict[str, Any] = {}
                 for block in td.get("blocks", []):
                     if block.get("type") != 0:
                         continue
@@ -2706,11 +3059,12 @@ class MiscPDFExtractor:
                                 continue
                             stripped = s["text"].strip()
                             for needle, var in self._APPX_B1_SUBGROUPS:
-                                if var in row_y:
+                                if var in row_y or var in located:
                                     continue
                                 if stripped == needle:
                                     cy = (s["bbox"][1] + s["bbox"][3]) / 2.0
                                     row_y[var] = cy
+                                    row_rect[var] = fitz.Rect(s["bbox"])
                                     break
 
                 drawings = page.get_drawings()
@@ -2733,15 +3087,21 @@ class MiscPDFExtractor:
                         return r
                     return None
 
-                # Included-column checkbox for each located row.
+                # Included-column checkbox for each located row. Prefer the
+                # stroked-box + pixel-density path; fall back to the
+                # ZapfDingbats glyph signal when no box exists (glyph family).
                 for var, cy in row_y.items():
                     box = _find_box(cy, self._APPX_B1_INCLUDED_X_CENTER)
                     if box is not None:
                         out[var] = self._checkbox_filled_by_pixels(page, box)
+                    else:
+                        out[var] = (
+                            1 if self._dingbat_checked(page, row_rect[var]) else 0
+                        )
 
-                # Aged row: min/max age fields.
-                if "aged_group" in row_y:
-                    aged_cy = row_y["aged_group"]
+                # Min/max age fields for every located subgroup row. The
+                # Included checkbox (out[var]) is already resolved above.
+                for var, cy in row_y.items():
                     min_text = ""
                     max_text = ""
                     for block in td.get("blocks", []):
@@ -2749,7 +3109,7 @@ class MiscPDFExtractor:
                             continue
                         for line in block.get("lines", []):
                             line_cy = (line["bbox"][1] + line["bbox"][3]) / 2.0
-                            if abs(line_cy - aged_cy) > self._APPX_B1_ROW_Y_TOL:
+                            if abs(line_cy - cy) > self._APPX_B1_ROW_Y_TOL:
                                 continue
                             for s in line.get("spans", []):
                                 txt = s["text"].strip()
@@ -2771,19 +3131,16 @@ class MiscPDFExtractor:
                                 ):
                                     max_text = txt
 
-                    out["aged_group_min"] = min_text
-                    if not max_text:
-                        nomax_box = _find_box(
-                            aged_cy, self._APPX_B1_NOMAX_X_CENTER
-                        )
-                        if (
-                            nomax_box is not None
-                            and self._checkbox_filled_by_pixels(page, nomax_box) == 1
-                        ):
-                            max_text = "No Maximum Age Limit"
-                    out["aged_group_max"] = max_text
+                    out[f"{var}_min"] = min_text
+                    # An Included group with an empty Maximum Age cell means
+                    # the waiver imposes no upper age bound.
+                    if not max_text and out.get(var) == 1:
+                        max_text = "No Maximum Age Limit"
+                    out[f"{var}_max"] = max_text
 
-                break
+                located.update(row_y.keys())
+                if len(located) >= len(self._APPX_B1_SUBGROUPS):
+                    break
         finally:
             doc.close()
 
@@ -2799,6 +3156,7 @@ class MiscPDFExtractor:
         return {
             "document_id": self.document_id,
             "program_title": self.program_title,
+            "waiver_description": self.waiver_description,
             "approval_period": self.approval_period,
             "waiver_type": self.waiver_type,
             "effective_date": self.effective_date,
@@ -2832,13 +3190,23 @@ class MiscPDFExtractor:
             "local_eval": self.local_eval,
             "local_eval_instrument": self.local_eval_instrument,
             "reeval_sched": self.reeval_sched,
+            "transitionplan_1": self.transitionplan_1,
+            "transitionplan_2": self.transitionplan_2,
+            "transitionplan_3": self.transitionplan_3,
+            "transitionplan_4": self.transitionplan_4,
+            "transitionplan_5": self.transitionplan_5,
+            "transitionplan_6": self.transitionplan_6,
+            "transitionplan_7": self.transitionplan_7,
+            "transitionplan_8": self.transitionplan_8,
+            "transitionplan_9": self.transitionplan_9,
+            "transitionplan_10": self.transitionplan_10,
             "selfdirection_description": self.selfdirection_description,
             "sd_authority": self.sd_authority,
             "sd_livarrngmt_1": self.sd_livarrngmt_1,
             "sd_livarrngmt_2": self.sd_livarrngmt_2,
             "sd_livarrngmt_3": self.sd_livarrngmt_3,
             "sd_election": self.sd_election,
-            "sd_services": self.sd_services,
+            **self._extract_sd_services(),
             "sd_fms_gov": self.sd_fms_gov,
             "sd_fms_pe": self.sd_fms_pe,
             **self._extract_scope_fms(),

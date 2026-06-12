@@ -40,9 +40,9 @@ Extracted by `html_top_extractor.py` and `text_top_extractor.py`.
 | `waive_geographic_limits` | Geographic limitation description |
 | `waive_geographic_lipd` | Limited implementation of participant-direction |
 
-### Appendix B-1: Target Groups - 14 fields
+### Appendix B-1: Target Groups - 36 fields
 
-12 group checkboxes plus min/max age for the aged group: `aged_group`, `aged_group_min`, `aged_group_max`, `physicaldis_group`, `otherdis_group`, `braininjury_group`, `hivaids_group`, `medicallyfrail_group`, `techdep_group`, `autism_group`, `dd_group`, `id_group`, `mi_group`, `sed_group`.
+12 group checkboxes — `aged_group`, `physicaldis_group`, `otherdis_group`, `braininjury_group`, `hivaids_group`, `medicallyfrail_group`, `techdep_group`, `autism_group`, `dd_group`, `id_group`, `mi_group`, `sed_group` — each with its own `<group>_min` and `<group>_max` age (e.g. `aged_group_min` / `aged_group_max`). A `<group>_max` reads `"No Maximum Age Limit"` when the group is Included but its Maximum Age cell is empty. (Per-group min/max is currently emitted by the MISC extractor; the text/html extractors still populate the aged group only.)
 
 ### Appendix B-2: Individual Cost Limit - 4 fields
 

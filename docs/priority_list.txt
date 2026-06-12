@@ -112,7 +112,7 @@ share the same H/T/A/M pattern):
   ce_1..12                                      0 0 0 1  Appx A-7 (MISC table)
   inse_1..12                                    0 0 0 1  Appx A-7 (MISC table)
   eligibility_1..12                             1 1 0 1  Appx B-4
-  eligibility_5_100                             1 1 0 1
+  eligibility_5_100                             1 1 1 1
   eligibility_5_percent                         1 1 0 1
   aged_group, aged_group_min, aged_group_max    1 1 0 1  Appx B-1
   autism_group                                  1 1 0 1
@@ -171,7 +171,7 @@ share the same H/T/A/M pattern):
   spousal_impov_bc                              1 1 1 1
   local_eval                                    1 1 1 1
   local_eval_instrument                         1 1 1 1
-  min_numservices                               1 1 1 1
+  min_numservices                               1 1 0 1
   reeval_sched                                  1 1 1 1
   provider_rate_methods                         1 0 0 1
   enhanced_payments_yes                         1 0 1 1
@@ -692,6 +692,71 @@ DEFERRED B-6 SUBSECTIONS (not in MISC yet, candidates for future):
   "specify the frequency:").
 - B-6-c, d, f, i, j: free-text fields.
 - B-6-h: "qualifications same/different" radio (2 options).
+
+ATTACHMENT #1 TRANSITION PLAN BACK-PORT (2026-06-09)
+----------------------------------------------------
+Ten brand-new checkbox variables were added to the MISC extractor for
+Attachment #1 "Transition Plan":
+- transitionplan_1   Replacing an approved waiver with this waiver.
+- transitionplan_2   Combining waivers.
+- transitionplan_3   Splitting one waiver into two waivers.
+- transitionplan_4   Eliminating a service.
+- transitionplan_5   Adding/decreasing individual cost limit pertaining
+                     to eligibility.
+- transitionplan_6   Adding/decreasing limits to a service or set of
+                     services (Appendix C).
+- transitionplan_7   Reducing the unduplicated count of participants
+                     (Factor C).
+- transitionplan_8   Adding/decreasing limitation on participants
+                     served at any point in time.
+- transitionplan_9   Changes causing eligibility loss / waiver
+                     transfer.
+- transitionplan_10  Changes causing reduced services.
+
+All 10 are Check Box, 1/0/None, sitting on page 10 of CO.0006.R06.00
+under the header "Attachment #1: Transition Plan". MISC uses
+`_detect_left_checkbox(substring_match=True)` per variable.
+
+CALIBRATION NOTE: Item 9 wraps after the word "another" in pypdf
+output, so its anchor uses a unique tail substring before the wrap.
+Items 9 and 10 share the prefix "Making any changes that could result
+in" — back-ports must use disambiguating tail substrings.
+
+NOT PRESENT in any other extractor; needs back-porting:
+- pdf_acroform_extractor.py — add TARGET_VARIABLES entries; needs
+  AcroForm field-name discovery in a newer flattened-but-acroform PDF.
+- html_top_extractor.py     — add per-variable form-field-ID parsing.
+- text_top_extractor.py     — add text-pattern extraction near the
+  "Attachment #1: Transition Plan" header.
+- scripts/build_updated_data_dictionary.py — add 10 Check Box rows
+  under "Attachment #1" section to the dictionary build.
+
+DEFERRED Transition Plan FOLLOW-UPS:
+- Free-text field "Specify the transition plan for the waiver:" (could
+  be added later as `transitionplan_text` using
+  `_value_after_labeled_colon`).
+- Cross-document robustness: verify anchors against at least one
+  non-CO calibration doc (e.g. AK0260R0600).
+
+SECTION 2 WAIVER_DESCRIPTION (2026-06-09)
+-----------------------------------------
+Added `waiver_description` to MISC
+(extractors/misc_extractor/misc_pdf_extractor.py): free-text body of
+Section 2 ("Brief Waiver Description"), bounded between the prompt's
+tail sentence "...service delivery methods." and the next-section
+header "3. Components of the Waiver Request". Mirrors the
+`selfdirection_description` (E-1-a) pattern (start regex + end regex
++ _PRINT_FOOTER_RE line stripping). Returns ~3,200 chars on CO.
+
+Status across extractors:
+- html_tertiary_extractor.py — already covers `waiver_description`.
+- text_tertiary_extractor.py — already covers `waiver_description`.
+- pdf_acroform_extractor.py  — NOT covered. Likely no AcroForm field
+  for this free-text body, but worth confirming in a newer template.
+  If absent, this stays a MISC/HTML/Text-only variable.
+- Dictionary: confirm `waiver_description` is present in
+  `docs/1915C_Data_Dictionary_Updated.xlsx` as a Text Box (Section 2)
+  with consistent naming.
 
 APPENDIX E-1 (2026-06-05)
 -------------------------
