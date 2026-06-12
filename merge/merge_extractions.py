@@ -33,21 +33,57 @@ import numpy as np
 
 
 _ARTIFACT_REPLACEMENTS = [
+    ("\xe2\x80\x99", "'"), ("\xe2\x80\x9c", '"'), ("\xe2\x80\x9d", '"'), ("\xe2\x80\x98", "'"),
+    ("\xe2\x80\xa2", ""), ("\xc3\xa9", "é"), ("\xc3\xa8", "è"), ("\xc3\xa0", "à"),
     ("â€™", "'"), ("â€œ", '"'), ("â€\x9d", '"'), ("â€˜", "'"),
     ("â€¢", ""), ("Ã©", "é"), ("Ã¨", "è"), ("Ã ", "à"),
-    ("�", ""), ("ÔøΩ", ""), ("", ""), ("✔", ""),
+    ("Ã¢ÂÂ", ""), ("ÃÂ", ""), ("Ã", ""), ("Â", ""),
+    ("�", ""), ("ÔøΩ", ""), ("", ""), ("", ""),
+    ("✔", ""), ("✓", ""), ("√", ""), ("□", ""), ("■", ""), ("☒", ""), ("☑", ""),
     ("‘", "'"), ("’", "'"), ("“", '"'), ("”", '"'),
     ("•", ""), ("·", ""), ("◦", ""),
     ("\xa0", " "),
     ("\xa7", ""),
+    # Encoding artifact in compound words (e.g. "Consumer ̢Directed")
+    (" ̢", ""), ("̢", ""),
+    # âs / â apostrophe artifact
+    ("â\x80\x99s", "'s"), ("âs", "'s"), ("personâs", "person's"),
+    # Broken encoding: â followed by smart-quote bytes
+    ("\xe2\x80\x9c", '"'), ("\xe2\x80\x9d", '"'), ("\xe2\x80\x99", "'"),
+    ("â\x80\x99", "'"), ("â\x80\x9c", '"'), ("â\x80\x9d", '"'),
+    # Cent symbol used as quote artifact: ¢word¢ → word
+    ("\xa2", ""),
+    # Bullet/OCR glyphs
+    ("", ""), ("\xd8", ""), ("Ø", ""),
+    # Private-use area glyphs
+    ("", ""), ("", ""), ("", ""), ("", ""),
 ]
+
 _ARTIFACT_RE = re.compile(
     r"Character Count:.*?out of \d+"
-    r"|Application for 1915\(c\) HCBS Waiver:[^P]*Page \d+ of \d+"
+    r"|Application for 1915\(c\) HCBS Waiver:.*?Page \d+ of \d+"
+    r"|Page \d+ of \d+\s+Application for 1915\(c\) HCBS Waiver:[^\n]*"
+    r"|Application for 1915\(c\).*"
+    r"|Application for a 1915\(c\) Home and Community-Based Services Waiver"
+    r"|PRA Disclosure Statement.*"
+    r"|OMB Control Number.*"
+    r"|Page\s+\d+\s+of\s+\d+"
     r"|https?://\S+"
+    r"|\S+\.jsp\S*"
+    r"|\S+\.aspx\S*"
     r"|\(\d{2}/\d{2}/\d{4}\)"
+    r"|\d{1,2}/\s*\d{1,2}/\s*\d{4}"
     r"|\bsv\w+:\w+\b"
+    r"|found here:\s*(?!https?://|www\.)"
+    r"|viewed at\s+for\b"
+    r"|webpage at:\s*(?!https?://|www\.)"
+    r"|website at:\s*\."
+    r"|^[\s\-_=]{5,}",
+    re.MULTILINE | re.IGNORECASE,
 )
+
+
+_SECTION_MARKER_RE = re.compile(r"^[A-Z]\.$")
 
 
 def clean_text_value(val) -> str:
@@ -58,7 +94,13 @@ def clean_text_value(val) -> str:
     for bad, good in _ARTIFACT_REPLACEMENTS:
         s = s.replace(bad, good)
     s = _ARTIFACT_RE.sub("", s)
+    # Remove ¢word¢ quote artifacts → word
+    s = re.sub(r"\xa2(\w[^¢]*?)\xa2", r"\1", s)
+    s = re.sub(r"¢(\w[^¢]*?)¢", r"\1", s)
     s = re.sub(r"\s+", " ", s).strip()
+    # Blank out bare section markers used as titles (e.g. "B.", "A.")
+    if _SECTION_MARKER_RE.match(s):
+        return ""
     return s
 
 
@@ -453,6 +495,7 @@ def merge_tiers(
         output_csv:    Where to save the result
         pdf_csv:       Optional path to pdf_acroform_extraction.csv
         how:           Join type for all merges — 'outer' (default) or 'left'
+        pdf_how:       Join type for PDF step — 'inner', 'left', or 'outer'
 
     Returns:
         Final merged DataFrame.
