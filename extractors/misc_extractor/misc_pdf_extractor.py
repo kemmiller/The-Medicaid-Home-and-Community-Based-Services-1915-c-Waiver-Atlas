@@ -58,6 +58,82 @@ _PRINT_FOOTER_RE = re.compile(
 )
 
 
+class _CachedPage:
+    """A fitz.Page wrapper that memoizes the costly parse calls.
+
+    The extractor visits the same pages from many call sites; ``get_text``
+    (plain and ``"dict"``) and ``get_drawings`` are the expensive operations
+    and their results are immutable for our read-only use, so each is computed
+    at most once per page. ``get_pixmap`` is not cached (its result depends on
+    the clip rect). Every other attribute/method forwards to the real page.
+    """
+
+    def __init__(self, page):
+        self._page = page
+        self._text_cache: Dict[str, Any] = {}
+        self._drawings_cache: Any = None
+
+    def get_text(self, option: str = "text", **kwargs):
+        if kwargs:
+            return self._page.get_text(option, **kwargs)
+        if option not in self._text_cache:
+            self._text_cache[option] = self._page.get_text(option)
+        return self._text_cache[option]
+
+    def get_drawings(self, *args, **kwargs):
+        if args or kwargs:
+            return self._page.get_drawings(*args, **kwargs)
+        if self._drawings_cache is None:
+            self._drawings_cache = self._page.get_drawings()
+        return self._drawings_cache
+
+    def __getattr__(self, name):
+        # Only reached for attributes not defined above (e.g. get_pixmap, rect).
+        return getattr(self._page, name)
+
+
+class _CachedDoc:
+    """A fitz.Document wrapper that parses each page at most once and shares
+    those parses across every extractor method.
+
+    Pages are wrapped lazily in :class:`_CachedPage` and cached by index, so
+    ``doc[n]`` / ``for page in doc`` / ``enumerate(doc)`` all return the same
+    wrapper for a given page. ``close()`` is intentionally a no-op: the owning
+    :class:`MiscPDFExtractor` opens the document once and closes it once (see
+    :meth:`MiscPDFExtractor.close`), while the legacy per-method
+    ``finally: doc.close()`` calls land here harmlessly.
+    """
+
+    def __init__(self, doc):
+        self._doc = doc
+        self._pages: Dict[int, _CachedPage] = {}
+
+    @property
+    def page_count(self) -> int:
+        return self._doc.page_count
+
+    def __len__(self) -> int:
+        return self._doc.page_count
+
+    def __getitem__(self, idx: int) -> _CachedPage:
+        page = self._pages.get(idx)
+        if page is None:
+            page = _CachedPage(self._doc[idx])
+            self._pages[idx] = page
+        return page
+
+    def __iter__(self):
+        for i in range(self._doc.page_count):
+            yield self[i]
+
+    def close(self) -> None:
+        # No-op: lifecycle is owned by MiscPDFExtractor.close().
+        pass
+
+    def _close_real(self) -> None:
+        self._doc.close()
+
+
 class MiscPDFExtractor:
     """Extracts variables from older / flattened 1915(c) waiver PDFs."""
 
@@ -66,6 +142,10 @@ class MiscPDFExtractor:
         self.pdf_path = Path(pdf_path)
         self._text: str = self._load_pdf_text()
         self._lines: List[str] = self._text.splitlines()
+        # Shared, page-cached fitz handle opened lazily on first geometry use
+        # and closed once in extract_all() — see _doc()/close().
+        self._fitz_doc: Optional[_CachedDoc] = None
+        self._fitz_doc_opened: bool = False
 
     # ------------------------------------------------------------------
     # Loading
@@ -82,6 +162,43 @@ class MiscPDFExtractor:
                 # pypdf occasionally raises on malformed pages; skip them
                 chunks.append("")
         return "\n".join(chunks)
+
+    def _doc(self) -> Optional["_CachedDoc"]:
+        """Return the shared, page-cached fitz document (opened once).
+
+        Opens the PDF on first use and caches the handle for every subsequent
+        method, eliminating the repeated full re-parse that dominated the
+        original runtime. Returns None if PyMuPDF is unavailable or the file
+        cannot be opened (callers degrade gracefully, as before).
+        """
+        if not self._fitz_doc_opened:
+            self._fitz_doc_opened = True
+            if fitz is not None:
+                try:
+                    self._fitz_doc = _CachedDoc(fitz.open(str(self.pdf_path)))
+                except Exception:
+                    self._fitz_doc = None
+        return self._fitz_doc
+
+    def close(self) -> None:
+        """Close the shared fitz document, if one was opened.
+
+        Resets the open flag so the instance stays reusable: a later geometry
+        access (or a second extract_all) will transparently reopen.
+        """
+        if self._fitz_doc is not None:
+            try:
+                self._fitz_doc._close_real()
+            except Exception:
+                pass
+            self._fitz_doc = None
+        self._fitz_doc_opened = False
+
+    def __del__(self):
+        try:
+            self.close()
+        except Exception:
+            pass
 
     # ------------------------------------------------------------------
     # Generic helpers
@@ -175,9 +292,8 @@ class MiscPDFExtractor:
         if fitz is None:
             return None
 
-        try:
-            doc = fitz.open(str(self.pdf_path))
-        except Exception:
+        doc = self._doc()
+        if doc is None:
             return None
 
         try:
@@ -290,6 +406,44 @@ class MiscPDFExtractor:
     # ------------------------------------------------------------------
 
     @staticmethod
+    def _dark_fraction(
+        page,
+        rect,
+        zoom: float = 8.0,
+        interior_margin: float = 0.0,
+        dark_threshold: int = 200,
+    ) -> float:
+        """Fraction of dark (< `dark_threshold`) grayscale pixels in `rect`.
+
+        Rasterizes `rect` on `page` at `zoom`x, optionally shrinks by
+        `interior_margin` on each side (used to exclude a box's border
+        stroke), and returns the dark-pixel ratio in [0, 1]. This is the
+        shared visual primitive behind both the stroked-box interior test
+        (`_checkbox_filled_by_pixels`) and the left-of-label band test
+        (`_visual_box_checked`).
+        """
+        clip = rect if isinstance(rect, fitz.Rect) else fitz.Rect(*rect)
+        pix = page.get_pixmap(
+            matrix=fitz.Matrix(zoom, zoom), clip=clip,
+            colorspace=fitz.csGRAY, alpha=False,
+        )
+        iw, ih = pix.width, pix.height
+        mx = int(iw * interior_margin)
+        my = int(ih * interior_margin)
+        if iw - 2 * mx <= 0 or ih - 2 * my <= 0:
+            return 0.0
+        samples = pix.samples
+        dark = 0
+        total = 0
+        for y in range(my, ih - my):
+            row_off = y * iw
+            for x in range(mx, iw - mx):
+                total += 1
+                if samples[row_off + x] < dark_threshold:
+                    dark += 1
+        return (dark / total) if total else 0.0
+
+    @staticmethod
     def _checkbox_filled_by_pixels(
         page,
         rect,
@@ -318,70 +472,86 @@ class MiscPDFExtractor:
         0.05 threshold leaves ~40 percentage points of margin on both
         sides for fainter check-marks or noisier renders.
         """
-        clip = rect if isinstance(rect, fitz.Rect) else fitz.Rect(*rect)
-        mat = fitz.Matrix(zoom, zoom)
-        pix = page.get_pixmap(
-            matrix=mat, clip=clip, colorspace=fitz.csGRAY, alpha=False
+        frac = MiscPDFExtractor._dark_fraction(
+            page, rect, zoom=zoom, interior_margin=interior_margin,
+            dark_threshold=dark_threshold,
         )
-        iw, ih = pix.width, pix.height
-        mx = int(iw * interior_margin)
-        my = int(ih * interior_margin)
-        if iw - 2 * mx <= 0 or ih - 2 * my <= 0:
-            return 0
-        samples = pix.samples
-        dark = 0
-        total = 0
-        for y in range(my, ih - my):
-            row_off = y * iw
-            for x in range(mx, iw - mx):
-                total += 1
-                if samples[row_off + x] < dark_threshold:
-                    dark += 1
-        if total == 0:
-            return 0
-        return 1 if (dark / total) > fill_ratio_threshold else 0
+        return 1 if frac > fill_ratio_threshold else 0
 
     # ------------------------------------------------------------------
-    # Glyph-checkbox helper (ZapfDingbats checkmark family)
+    # Visual checkbox fallback (ink in the band left of a label)
     # ------------------------------------------------------------------
 
-    @staticmethod
-    def _dingbat_checked(
+    def _visual_box_checked(
+        self,
         page,
         label_rect,
-        max_left: float = 55.0,
-        y_tol: float = 7.0,
-    ) -> bool:
-        """Return True if a ZapfDingbats checkmark glyph sits left of `label_rect`.
+        x0_off: float,
+        x1_off: float,
+        y_pad: float = 7.0,
+        threshold: float = 0.006,
+        zoom: float = 8.0,
+        dark_threshold: int = 200,
+    ) -> int:
+        """Return 1 if a checkbox mark sits in the band left of `label_rect`.
 
-        Some templates (e.g. PA.0593) render checkboxes not as stroked
-        squares but as a font glyph: a *checked* box is a `ZapfDingbats`
-        span (the '3' check-mark) painted just to the left of the label,
-        while an *unchecked* box has no glyph at all. This is the fallback
-        signal when the stroked-box / pixel-density detectors find nothing.
+        Generic, font-agnostic replacement for glyph-specific checkbox
+        detection. When a checkbox has no stroked-box drawing to measure
+        (flattened templates that paint the box and its check-mark as font
+        glyphs, e.g. PA.0593), the only rendering-invariant signal is *ink on
+        the page* where the box sits. Rasterize a band to the left of the
+        label — horizontally from `label.x0 - x0_off` to `label.x0 - x1_off`,
+        `y_pad` px above/below the label's vertical centre — and return 1 if
+        its dark-pixel fraction exceeds `threshold`.
 
-        A qualifying glyph has its font containing "ZapfDingbats", sits to
-        the left of the label (`span.x1 <= label.x0` within `max_left` px),
-        and is vertically aligned with the label (centre within `y_tol`).
+        The checkbox→label gap varies by template and section, so each call
+        site supplies the `x0_off`/`x1_off` band offset for its layout.
+        Calibrated on PA.0593: checked rows ≈0.02 dark fraction, unchecked
+        0.0; the 0.006 default leaves wide margin on both sides.
         """
-        label_cy = (label_rect.y0 + label_rect.y1) / 2.0
-        td = page.get_text("dict")
-        for block in td.get("blocks", []):
-            if block.get("type") != 0:
-                continue
-            for line in block.get("lines", []):
-                for s in line.get("spans", []):
-                    if "ZapfDingbats" not in s.get("font", ""):
-                        continue
-                    if not s["text"].strip():
-                        continue
-                    sx0, sy0, sx1, sy1 = s["bbox"]
-                    if not (sx1 <= label_rect.x0 and sx0 >= label_rect.x0 - max_left):
-                        continue
-                    if abs((sy0 + sy1) / 2.0 - label_cy) > y_tol:
-                        continue
-                    return True
-        return False
+        cy = (label_rect.y0 + label_rect.y1) / 2.0
+        band = fitz.Rect(
+            label_rect.x0 - x0_off, cy - y_pad,
+            label_rect.x0 - x1_off, cy + y_pad,
+        )
+        if band.width <= 0 or band.height <= 0:
+            return 0
+        frac = self._dark_fraction(
+            page, band, zoom=zoom, interior_margin=0.0,
+            dark_threshold=dark_threshold,
+        )
+        return 1 if frac > threshold else 0
+
+    # If a band-fallback column has EVERY row at or above this much ink, the
+    # band is measuring uniform cell shading / a gray box image / noise rather
+    # than sparse check-marks (a true glyph family leaves unchecked rows ~0.0).
+    # Such a column is unreadable by the band, so it is left unresolved (None)
+    # instead of emitting a false all-checked. Calibrated: PA glyph family has
+    # unchecked rows ≈0.000; the gray-image families (MN0025, PA0279, WI0484…)
+    # have every row ≥0.035.
+    _BAND_FILL_MIN = 0.015
+    _BAND_THRESHOLD = 0.006
+
+    def _band_column(self, items, x0_off, x1_off, y_pad=7.0):
+        """Resolve a column of checkboxes from the ink band left of each label
+        (flattened glyph families with no box drawings).
+
+        `items` is an iterable of `(key, page, label_rect)`. Returns
+        `{key: 0/1}`, or `{key: None}` for the whole column when every row has
+        substantial band ink (see `_BAND_FILL_MIN`) — i.e. the band is reading
+        fill/noise, not check-marks, and cannot be trusted.
+        """
+        fr = {}
+        for key, page, lr in items:
+            cy = (lr.y0 + lr.y1) / 2.0
+            band = fitz.Rect(lr.x0 - x0_off, cy - y_pad, lr.x0 - x1_off, cy + y_pad)
+            fr[key] = (
+                self._dark_fraction(page, band)
+                if band.width > 0 and band.height > 0 else 0.0
+            )
+        if fr and min(fr.values()) > self._BAND_FILL_MIN:
+            return {k: None for k in fr}
+        return {k: (1 if v > self._BAND_THRESHOLD else 0) for k, v in fr.items()}
 
     # ------------------------------------------------------------------
     # Visual checkbox helper (small square to the left of a label)
@@ -416,9 +586,8 @@ class MiscPDFExtractor:
         if fitz is None:
             return None
 
-        try:
-            doc = fitz.open(str(self.pdf_path))
-        except Exception:
+        doc = self._doc()
+        if doc is None:
             return None
 
         target = label.strip().lower()
@@ -444,18 +613,30 @@ class MiscPDFExtractor:
                 drawings = page.get_drawings()
                 rect = label_rects[0]
 
+                # Search far enough left to cover the visual band below
+                # (x0_off=30): a stroked box whose outline would otherwise fall
+                # inside the band must be found here and measured by interior
+                # pixel-density, never read as ink by the band.
+                box_search_left = max(x_max_offset, 32.0)
                 near = [
                     d for d in drawings
                     if d.get("rect") is not None
                     and min_size <= d["rect"].width <= max_size
                     and min_size <= d["rect"].height <= max_size
                     and d["rect"].x1 <= rect.x0
-                    and d["rect"].x0 >= rect.x0 - x_max_offset
+                    and d["rect"].x0 >= rect.x0 - box_search_left
                     and d["rect"].y1 >= rect.y0 - y_tol
                     and d["rect"].y0 <= rect.y1 + y_tol
                 ]
                 if not near:
-                    return None
+                    # No stroked box near the label → flattened glyph family
+                    # (the box and any check-mark are painted as font glyphs,
+                    # which get_drawings() does not surface). Read the ink in
+                    # the band just left of the label: a check-mark registers,
+                    # a blank box reads 0. See _visual_box_checked.
+                    return self._visual_box_checked(
+                        page, rect, x0_off=30.0, x1_off=2.0
+                    )
 
                 # Pick the smallest outline (the checkbox itself, not any
                 # enclosing decoration). Then measure its interior.
@@ -510,9 +691,8 @@ class MiscPDFExtractor:
         if fitz is None:
             return None
 
-        try:
-            doc = fitz.open(str(self.pdf_path))
-        except Exception:
+        doc = self._doc()
+        if doc is None:
             return None
 
         try:
@@ -680,9 +860,8 @@ class MiscPDFExtractor:
         target = parent_label.strip().lower()
         next_target = next_section_label.strip().lower()
 
-        try:
-            doc = fitz.open(str(self.pdf_path))
-        except Exception:
+        doc = self._doc()
+        if doc is None:
             return None
 
         try:
@@ -1332,9 +1511,8 @@ class MiscPDFExtractor:
         """
         if fitz is None:
             return ""
-        try:
-            doc = fitz.open(str(self.pdf_path))
-        except Exception:
+        doc = self._doc()
+        if doc is None:
             return ""
 
         terminators = (
@@ -1436,9 +1614,8 @@ class MiscPDFExtractor:
         """
         if fitz is None:
             return {}
-        try:
-            doc = fitz.open(str(self.pdf_path))
-        except Exception:
+        doc = self._doc()
+        if doc is None:
             return {}
 
         year_label_re = re.compile(r"^\s*Year\s+(\d)\s*$")
@@ -1616,9 +1793,8 @@ class MiscPDFExtractor:
         if fitz is None:
             self._b4_cache = out
             return out
-        try:
-            doc = fitz.open(str(self.pdf_path))
-        except Exception:
+        doc = self._doc()
+        if doc is None:
             self._b4_cache = out
             return out
 
@@ -1663,38 +1839,54 @@ class MiscPDFExtractor:
                 if len(row_locations) == 12:
                     break
 
-            # For each located row, find the 9x9 stroked-outline at x≈89.6.
+            # Pass 1: for each located row, find the checkbox-sized box (filled
+            # or stroked) just left of the label. Anchored on the label (box
+            # centre sits ~7-9px left of label.x0 across templates) rather than
+            # a fixed x-window, so a differing label column doesn't cause misses.
+            found: Dict[int, tuple] = {}  # row_idx -> (pno, label_rect, box|None)
             for row_idx, (pno, label_rect) in row_locations.items():
-                page = doc[pno]
                 label_cy = (label_rect.y0 + label_rect.y1) / 2.0
                 box = None
-                for d in page.get_drawings():
-                    if d.get("type") != "s":
+                best_gap = float("inf")
+                for d in doc[pno].get_drawings():
+                    if d.get("type") not in ("s", "f"):
                         continue
                     r = d.get("rect")
                     if r is None:
                         continue
                     if not (8.0 <= r.width <= 11.0 and 8.0 <= r.height <= 11.0):
                         continue
-                    box_cy = (r.y0 + r.y1) / 2.0
-                    if abs(box_cy - label_cy) > 6.0:
+                    if abs((r.y0 + r.y1) / 2.0 - label_cy) > 6.0:
                         continue
-                    box_cx = (r.x0 + r.x1) / 2.0
-                    # eligibility column x ≈ 89.6 (center ≈ 94)
-                    if not (80.0 <= box_cx <= 105.0):
+                    gap = label_rect.x0 - (r.x0 + r.x1) / 2.0
+                    if not (0.0 < gap <= 25.0):
                         continue
-                    box = r
-                    break
-                if box is not None:
-                    out[f"eligibility_{row_idx}"] = (
-                        self._checkbox_filled_by_pixels(page, box)
-                    )
-                else:
-                    # No stroked box → glyph-checkbox family (ZapfDingbats
-                    # check-mark left of the label, absent when unchecked).
-                    out[f"eligibility_{row_idx}"] = (
-                        1 if self._dingbat_checked(page, label_rect) else 0
-                    )
+                    if gap < best_gap:
+                        best_gap = gap
+                        box = r
+                found[row_idx] = (pno, label_rect, box)
+
+            # Every eligibility checkbox shares one column x. Derive it from the
+            # rows that found a box and measure EVERY row there (synthesising a
+            # box rect for rows whose own box was missed). Only when NO row found
+            # a box is it a true glyph family: read the ink band left of label.
+            col_boxes = [b for (_, _, b) in found.values() if b is not None]
+            if col_boxes:
+                cxs = sorted((b.x0 + b.x1) / 2.0 for b in col_boxes)
+                col_cx = cxs[len(cxs) // 2]
+                half = (sum(b.width for b in col_boxes) / len(col_boxes)) / 2.0
+                for row_idx, (pno, label_rect, box) in found.items():
+                    if box is None:
+                        cy = (label_rect.y0 + label_rect.y1) / 2.0
+                        box = fitz.Rect(col_cx - half, cy - half, col_cx + half, cy + half)
+                    out[f"eligibility_{row_idx}"] = self._checkbox_filled_by_pixels(doc[pno], box)
+            else:
+                band = self._band_column(
+                    [(ridx, doc[pno], lr) for ridx, (pno, lr, _b) in found.items()],
+                    x0_off=12.0, x1_off=1.0,
+                )
+                for ridx, v in band.items():
+                    out[f"eligibility_{ridx}"] = v
         finally:
             doc.close()
 
@@ -2167,9 +2359,8 @@ class MiscPDFExtractor:
         empty: Dict[str, Any] = {k: [] for k in keys}
         if fitz is None:
             return empty
-        try:
-            doc = fitz.open(str(self.pdf_path))
-        except Exception:
+        doc = self._doc()
+        if doc is None:
             return empty
 
         SECTION_START = "E-1: Overview (6 of 13)"
@@ -2262,7 +2453,7 @@ class MiscPDFExtractor:
                         ea_state: Optional[int] = None
                         ba_state: Optional[int] = None
                         for d in drawings:
-                            if d.get("type") != "s":
+                            if d.get("type") not in ("s", "f"):
                                 continue
                             r = d.get("rect")
                             if r is None:
@@ -2611,9 +2802,8 @@ class MiscPDFExtractor:
             ("scope_fms_4", "Other", "exact"),
         ]
 
-        try:
-            doc = fitz.open(str(self.pdf_path))
-        except Exception:
+        doc = self._doc()
+        if doc is None:
             return out
 
         try:
@@ -2677,7 +2867,7 @@ class MiscPDFExtractor:
                     lcy = (label_rect.y0 + label_rect.y1) / 2.0
                     candidates: List = []
                     for d in drawings:
-                        if d.get("type") != "s":
+                        if d.get("type") not in ("s", "f"):
                             continue
                         r = d.get("rect")
                         if r is None:
@@ -2745,9 +2935,8 @@ class MiscPDFExtractor:
         ROW_Y_TOL = 8.0
         SECTION_END = "E-2: Opportunities for Participant Direction"
 
-        try:
-            doc = fitz.open(str(self.pdf_path))
-        except Exception:
+        doc = self._doc()
+        if doc is None:
             return out
 
         try:
@@ -2853,9 +3042,8 @@ class MiscPDFExtractor:
             self._appx_a_cache = out
             return out
 
-        try:
-            doc = fitz.open(str(self.pdf_path))
-        except Exception:
+        doc = self._doc()
+        if doc is None:
             self._appx_a_cache = out
             return out
 
@@ -2929,7 +3117,7 @@ class MiscPDFExtractor:
                 page = doc[pno]
                 row_boxes: List = []
                 for d in page.get_drawings():
-                    if d.get("type") != "s":
+                    if d.get("type") not in ("s", "f"):
                         continue
                     r = d.get("rect")
                     if r is None:
@@ -2941,20 +3129,32 @@ class MiscPDFExtractor:
                         continue
                     row_boxes.append(r)
 
-                for box in row_boxes:
-                    box_cx = (box.x0 + box.x1) / 2.0
-                    best_prefix: Optional[str] = None
-                    best_dist = float("inf")
+                if row_boxes:
+                    for box in row_boxes:
+                        box_cx = (box.x0 + box.x1) / 2.0
+                        best_prefix: Optional[str] = None
+                        best_dist = float("inf")
+                        for prefix, cx in column_x.items():
+                            dist = abs(box_cx - cx)
+                            if dist < best_dist:
+                                best_dist = dist
+                                best_prefix = prefix
+                        if best_prefix is None or best_dist > 30.0:
+                            continue
+                        out[f"{best_prefix}_{row_idx}"] = (
+                            self._checkbox_filled_by_pixels(page, box)
+                        )
+                else:
+                    # No stroked boxes in this row → flattened glyph family.
+                    # Read the ink in each detected column's cell (centred on
+                    # the column header x and the row's y); a blank cell reads
+                    # 0. Column pitch (~76px) far exceeds the ±11px cell, so
+                    # there is no cross-talk between columns.
                     for prefix, cx in column_x.items():
-                        dist = abs(box_cx - cx)
-                        if dist < best_dist:
-                            best_dist = dist
-                            best_prefix = prefix
-                    if best_prefix is None or best_dist > 30.0:
-                        continue
-                    out[f"{best_prefix}_{row_idx}"] = (
-                        self._checkbox_filled_by_pixels(page, box)
-                    )
+                        cell = fitz.Rect(cx - 11.0, row_cy - 7.0, cx + 11.0, row_cy + 7.0)
+                        out[f"{prefix}_{row_idx}"] = (
+                            1 if self._dark_fraction(page, cell) > 0.006 else 0
+                        )
         finally:
             doc.close()
 
@@ -2988,11 +3188,14 @@ class MiscPDFExtractor:
     # Column x-windows derived from the page-23 header positions; see
     # the plan file for the geometry survey.
     _APPX_B1_SUBGROUP_X = (205.0, 235.0)   # SubGroup label column (PA labels at x≈208)
-    _APPX_B1_INCLUDED_X_CENTER = 186.0     # Included checkbox column
     _APPX_B1_MIN_AGE_X = (362.0, 414.0)    # Minimum Age text column
     _APPX_B1_MAX_AGE_X = (425.0, 485.0)    # Maximum Age Limit text column
     _APPX_B1_ROW_Y_TOL = 6.0
-    _APPX_B1_BOX_X_TOL = 10.0
+    # The Included checkbox sits a near-constant gap left of the subgroup
+    # label (CO/IN/VA all ≈29-31px between box.x1 and label.x0); the absolute
+    # x varies with the label column, so anchor on the label, not a fixed x.
+    _APPX_B1_BOX_GAP_MIN = 18.0
+    _APPX_B1_BOX_GAP_MAX = 45.0
 
     def _extract_appendix_b1_table(self) -> Dict[str, Any]:
         """One geometry pass over Appendix-B-1 Section a.
@@ -3016,9 +3219,8 @@ class MiscPDFExtractor:
             self._appx_b1_cache = out
             return out
 
-        try:
-            doc = fitz.open(str(self.pdf_path))
-        except Exception:
+        doc = self._doc()
+        if doc is None:
             self._appx_b1_cache = out
             return out
 
@@ -3041,8 +3243,8 @@ class MiscPDFExtractor:
                 td = page.get_text("dict")
 
                 # Locate each not-yet-resolved subgroup row's center y and
-                # label rect (the rect is needed for the glyph-checkbox
-                # fallback used by the ZapfDingbats template family).
+                # label rect (the rect anchors the visual ink-band fallback
+                # used when a row has no stroked Included checkbox).
                 row_y: Dict[str, float] = {}
                 row_rect: Dict[str, Any] = {}
                 for block in td.get("blocks", []):
@@ -3069,35 +3271,59 @@ class MiscPDFExtractor:
 
                 drawings = page.get_drawings()
 
-                def _find_box(row_cy: float, x_center: float):
+                def _find_box(label_rect):
+                    """Nearest checkbox-sized stroked box just left of the row
+                    label. Anchored on the label (consistent ~29px gap) rather
+                    than a fixed x, so the differing label-column x across
+                    templates doesn't cause misses (which previously dropped to
+                    the band fallback and read the box outline as a check)."""
+                    row_cy = (label_rect.y0 + label_rect.y1) / 2.0
+                    best = None
+                    best_gap = float("inf")
                     for d in drawings:
-                        if d.get("type") != "s":
+                        if d.get("type") not in ("s", "f"):
                             continue
                         r = d.get("rect")
                         if r is None:
                             continue
                         if not (8.0 <= r.width <= 11.0 and 8.0 <= r.height <= 11.0):
                             continue
-                        box_cy = (r.y0 + r.y1) / 2.0
-                        if abs(box_cy - row_cy) > self._APPX_B1_ROW_Y_TOL:
+                        if abs((r.y0 + r.y1) / 2.0 - row_cy) > self._APPX_B1_ROW_Y_TOL:
                             continue
-                        box_cx = (r.x0 + r.x1) / 2.0
-                        if abs(box_cx - x_center) > self._APPX_B1_BOX_X_TOL:
+                        gap = label_rect.x0 - r.x1
+                        if not (self._APPX_B1_BOX_GAP_MIN <= gap <= self._APPX_B1_BOX_GAP_MAX):
                             continue
-                        return r
-                    return None
+                        if gap < best_gap:
+                            best_gap = gap
+                            best = r
+                    return best
 
-                # Included-column checkbox for each located row. Prefer the
-                # stroked-box + pixel-density path; fall back to the
-                # ZapfDingbats glyph signal when no box exists (glyph family).
-                for var, cy in row_y.items():
-                    box = _find_box(cy, self._APPX_B1_INCLUDED_X_CENTER)
-                    if box is not None:
-                        out[var] = self._checkbox_filled_by_pixels(page, box)
-                    else:
-                        out[var] = (
-                            1 if self._dingbat_checked(page, row_rect[var]) else 0
+                # Included-column checkbox for each located row. Every row's
+                # checkbox shares one column x, so resolve each row's own box
+                # first, then derive the column from the rows that found one and
+                # measure EVERY row there — synthesising a box rect for rows
+                # whose own box was missed (e.g. a page-boundary row, or a
+                # filled cell get_drawings split oddly). Only when NO row on the
+                # page found a box is it a true glyph family (e.g. PA): then read
+                # the ink band left of the label.
+                found = {var: _find_box(row_rect[var]) for var in row_y}
+                col_boxes = [b for b in found.values() if b is not None]
+                if col_boxes:
+                    cxs = sorted((b.x0 + b.x1) / 2.0 for b in col_boxes)
+                    col_cx = cxs[len(cxs) // 2]
+                    half = (sum(b.width for b in col_boxes) / len(col_boxes)) / 2.0
+                    for var, cy in row_y.items():
+                        box = found[var] or fitz.Rect(
+                            col_cx - half, cy - half, col_cx + half, cy + half
                         )
+                        out[var] = self._checkbox_filled_by_pixels(page, box)
+                else:
+                    band = self._band_column(
+                        [(var, page, row_rect[var]) for var in row_y],
+                        x0_off=52.0, x1_off=12.0,
+                    )
+                    for var, v in band.items():
+                        out[var] = v
 
                 # Min/max age fields for every located subgroup row. The
                 # Included checkbox (out[var]) is already resolved above.
@@ -3152,7 +3378,17 @@ class MiscPDFExtractor:
     # ==================================================================
 
     def extract_all(self) -> Dict[str, Any]:
-        """Return all currently implemented MISC fields for this document."""
+        """Return all currently implemented MISC fields for this document.
+
+        Opens the PDF once for every geometry pass (see _doc) and closes it
+        when done.
+        """
+        try:
+            return self._collect_fields()
+        finally:
+            self.close()
+
+    def _collect_fields(self) -> Dict[str, Any]:
         return {
             "document_id": self.document_id,
             "program_title": self.program_title,
