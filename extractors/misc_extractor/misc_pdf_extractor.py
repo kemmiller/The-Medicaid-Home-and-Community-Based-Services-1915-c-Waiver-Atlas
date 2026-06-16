@@ -522,6 +522,37 @@ class MiscPDFExtractor:
         )
         return 1 if frac > threshold else 0
 
+    # If a band-fallback column has EVERY row at or above this much ink, the
+    # band is measuring uniform cell shading / a gray box image / noise rather
+    # than sparse check-marks (a true glyph family leaves unchecked rows ~0.0).
+    # Such a column is unreadable by the band, so it is left unresolved (None)
+    # instead of emitting a false all-checked. Calibrated: PA glyph family has
+    # unchecked rows ≈0.000; the gray-image families (MN0025, PA0279, WI0484…)
+    # have every row ≥0.035.
+    _BAND_FILL_MIN = 0.015
+    _BAND_THRESHOLD = 0.006
+
+    def _band_column(self, items, x0_off, x1_off, y_pad=7.0):
+        """Resolve a column of checkboxes from the ink band left of each label
+        (flattened glyph families with no box drawings).
+
+        `items` is an iterable of `(key, page, label_rect)`. Returns
+        `{key: 0/1}`, or `{key: None}` for the whole column when every row has
+        substantial band ink (see `_BAND_FILL_MIN`) — i.e. the band is reading
+        fill/noise, not check-marks, and cannot be trusted.
+        """
+        fr = {}
+        for key, page, lr in items:
+            cy = (lr.y0 + lr.y1) / 2.0
+            band = fitz.Rect(lr.x0 - x0_off, cy - y_pad, lr.x0 - x1_off, cy + y_pad)
+            fr[key] = (
+                self._dark_fraction(page, band)
+                if band.width > 0 and band.height > 0 else 0.0
+            )
+        if fr and min(fr.values()) > self._BAND_FILL_MIN:
+            return {k: None for k in fr}
+        return {k: (1 if v > self._BAND_THRESHOLD else 0) for k, v in fr.items()}
+
     # ------------------------------------------------------------------
     # Visual checkbox helper (small square to the left of a label)
     # ------------------------------------------------------------------
@@ -1808,18 +1839,17 @@ class MiscPDFExtractor:
                 if len(row_locations) == 12:
                     break
 
-            # For each located row, find the checkbox-sized stroked box just
-            # left of the label. Anchored on the label (box centre sits a
-            # near-constant ~7-9px left of label.x0 across templates) rather
-            # than a fixed x-window, so the differing label column doesn't
-            # cause misses that drop to the band and read the box outline.
+            # Pass 1: for each located row, find the checkbox-sized box (filled
+            # or stroked) just left of the label. Anchored on the label (box
+            # centre sits ~7-9px left of label.x0 across templates) rather than
+            # a fixed x-window, so a differing label column doesn't cause misses.
+            found: Dict[int, tuple] = {}  # row_idx -> (pno, label_rect, box|None)
             for row_idx, (pno, label_rect) in row_locations.items():
-                page = doc[pno]
                 label_cy = (label_rect.y0 + label_rect.y1) / 2.0
                 box = None
                 best_gap = float("inf")
-                for d in page.get_drawings():
-                    if d.get("type") != "s":
+                for d in doc[pno].get_drawings():
+                    if d.get("type") not in ("s", "f"):
                         continue
                     r = d.get("rect")
                     if r is None:
@@ -1828,24 +1858,35 @@ class MiscPDFExtractor:
                         continue
                     if abs((r.y0 + r.y1) / 2.0 - label_cy) > 6.0:
                         continue
-                    box_cx = (r.x0 + r.x1) / 2.0
-                    gap = label_rect.x0 - box_cx
+                    gap = label_rect.x0 - (r.x0 + r.x1) / 2.0
                     if not (0.0 < gap <= 25.0):
                         continue
                     if gap < best_gap:
                         best_gap = gap
                         box = r
-                if box is not None:
-                    out[f"eligibility_{row_idx}"] = (
-                        self._checkbox_filled_by_pixels(page, box)
-                    )
-                else:
-                    # No stroked box → flattened glyph family: read the ink in
-                    # the band just left of the label (B-4 check-mark sits ~3px
-                    # left of the option text).
-                    out[f"eligibility_{row_idx}"] = self._visual_box_checked(
-                        page, label_rect, x0_off=12.0, x1_off=1.0
-                    )
+                found[row_idx] = (pno, label_rect, box)
+
+            # Every eligibility checkbox shares one column x. Derive it from the
+            # rows that found a box and measure EVERY row there (synthesising a
+            # box rect for rows whose own box was missed). Only when NO row found
+            # a box is it a true glyph family: read the ink band left of label.
+            col_boxes = [b for (_, _, b) in found.values() if b is not None]
+            if col_boxes:
+                cxs = sorted((b.x0 + b.x1) / 2.0 for b in col_boxes)
+                col_cx = cxs[len(cxs) // 2]
+                half = (sum(b.width for b in col_boxes) / len(col_boxes)) / 2.0
+                for row_idx, (pno, label_rect, box) in found.items():
+                    if box is None:
+                        cy = (label_rect.y0 + label_rect.y1) / 2.0
+                        box = fitz.Rect(col_cx - half, cy - half, col_cx + half, cy + half)
+                    out[f"eligibility_{row_idx}"] = self._checkbox_filled_by_pixels(doc[pno], box)
+            else:
+                band = self._band_column(
+                    [(ridx, doc[pno], lr) for ridx, (pno, lr, _b) in found.items()],
+                    x0_off=12.0, x1_off=1.0,
+                )
+                for ridx, v in band.items():
+                    out[f"eligibility_{ridx}"] = v
         finally:
             doc.close()
 
@@ -2412,7 +2453,7 @@ class MiscPDFExtractor:
                         ea_state: Optional[int] = None
                         ba_state: Optional[int] = None
                         for d in drawings:
-                            if d.get("type") != "s":
+                            if d.get("type") not in ("s", "f"):
                                 continue
                             r = d.get("rect")
                             if r is None:
@@ -2826,7 +2867,7 @@ class MiscPDFExtractor:
                     lcy = (label_rect.y0 + label_rect.y1) / 2.0
                     candidates: List = []
                     for d in drawings:
-                        if d.get("type") != "s":
+                        if d.get("type") not in ("s", "f"):
                             continue
                         r = d.get("rect")
                         if r is None:
@@ -3076,7 +3117,7 @@ class MiscPDFExtractor:
                 page = doc[pno]
                 row_boxes: List = []
                 for d in page.get_drawings():
-                    if d.get("type") != "s":
+                    if d.get("type") not in ("s", "f"):
                         continue
                     r = d.get("rect")
                     if r is None:
@@ -3240,7 +3281,7 @@ class MiscPDFExtractor:
                     best = None
                     best_gap = float("inf")
                     for d in drawings:
-                        if d.get("type") != "s":
+                        if d.get("type") not in ("s", "f"):
                             continue
                         r = d.get("rect")
                         if r is None:
@@ -3257,19 +3298,32 @@ class MiscPDFExtractor:
                             best = r
                     return best
 
-                # Included-column checkbox for each located row. Prefer the
-                # stroked-box + pixel-density path; fall back to the ink in the
-                # band left of the label only when no box exists at all
-                # (flattened glyph family, e.g. PA, where the check-mark sits
-                # ~30px left of the row label).
-                for var, cy in row_y.items():
-                    box = _find_box(row_rect[var])
-                    if box is not None:
-                        out[var] = self._checkbox_filled_by_pixels(page, box)
-                    else:
-                        out[var] = self._visual_box_checked(
-                            page, row_rect[var], x0_off=52.0, x1_off=12.0
+                # Included-column checkbox for each located row. Every row's
+                # checkbox shares one column x, so resolve each row's own box
+                # first, then derive the column from the rows that found one and
+                # measure EVERY row there — synthesising a box rect for rows
+                # whose own box was missed (e.g. a page-boundary row, or a
+                # filled cell get_drawings split oddly). Only when NO row on the
+                # page found a box is it a true glyph family (e.g. PA): then read
+                # the ink band left of the label.
+                found = {var: _find_box(row_rect[var]) for var in row_y}
+                col_boxes = [b for b in found.values() if b is not None]
+                if col_boxes:
+                    cxs = sorted((b.x0 + b.x1) / 2.0 for b in col_boxes)
+                    col_cx = cxs[len(cxs) // 2]
+                    half = (sum(b.width for b in col_boxes) / len(col_boxes)) / 2.0
+                    for var, cy in row_y.items():
+                        box = found[var] or fitz.Rect(
+                            col_cx - half, cy - half, col_cx + half, cy + half
                         )
+                        out[var] = self._checkbox_filled_by_pixels(page, box)
+                else:
+                    band = self._band_column(
+                        [(var, page, row_rect[var]) for var in row_y],
+                        x0_off=52.0, x1_off=12.0,
+                    )
+                    for var, v in band.items():
+                        out[var] = v
 
                 # Min/max age fields for every located subgroup row. The
                 # Included checkbox (out[var]) is already resolved above.
