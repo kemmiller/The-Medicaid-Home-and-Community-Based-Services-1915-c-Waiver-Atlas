@@ -64,46 +64,49 @@ SECTION4_COLUMNS = [
     "waive_geographic_lipd",
 ]
 
-# Appendix B-1: Target Groups (14 columns - only aged has min/max)
+# Appendix B-1: Target Groups (36 columns - checkbox + min + max for all 12 groups)
 B1_COLUMNS = [
     "aged_group",
     "aged_group_min",
     "aged_group_max",
     "physicaldis_group",
+    "physicaldis_group_min",
+    "physicaldis_group_max",
     "otherdis_group",
+    "otherdis_group_min",
+    "otherdis_group_max",
     "braininjury_group",
+    "braininjury_group_min",
+    "braininjury_group_max",
     "hivaids_group",
+    "hivaids_group_min",
+    "hivaids_group_max",
     "medicallyfrail_group",
+    "medicallyfrail_group_min",
+    "medicallyfrail_group_max",
     "techdep_group",
+    "techdep_group_min",
+    "techdep_group_max",
     "autism_group",
+    "autism_group_min",
+    "autism_group_max",
     "dd_group",
+    "dd_group_min",
+    "dd_group_max",
     "id_group",
+    "id_group_min",
+    "id_group_max",
     "mi_group",
+    "mi_group_min",
+    "mi_group_max",
     "sed_group",
+    "sed_group_min",
+    "sed_group_max",
 ]
 
 # Appendix B-2: Individual Cost Limit
 B2_COLUMNS = [
     "cost_limit_pcntaboveinstit",
-    "cost_limit_instit",
-    "cost_limit_lowerinstit",
-]
-
-# Appendix B-6: Evaluation/Reevaluation of Level of Care
-# Split flags; collapsed to `local_eval`, `local_eval_instrument`, and
-# `reeval_sched` on output. `min_numservices` is emitted directly (text box).
-B6_COLUMNS = [
-    "min_numservices",
-    "local_eval_a",
-    "local_eval_b",
-    "local_eval_c",
-    "local_eval_d",
-    "local_eval_instrument_same",
-    "local_eval_instrument_diff",
-    "reeval_sched_3mo",
-    "reeval_sched_6mo",
-    "reeval_sched_12mo",
-    "reeval_sched_other",
 ]
 
 # Appendix B-3: Number of Individuals Served
@@ -142,6 +145,8 @@ B4_COLUMNS = [
 B5_COLUMNS = [
     "spousal_impov_a",
 ]
+
+
 
 # All columns combined
 ALL_COLUMNS = (
@@ -203,11 +208,33 @@ TARGET_GROUP_CHECKBOX_IDS = {
 }
 
 TARGET_GROUP_MIN_IDS = {
-    "aged_group_min": "svapdxB1_1:tgagAgedMin",
+    "aged_group_min":          "svapdxB1_1:tgagAgedMin",
+    "physicaldis_group_min":   "svapdxB1_1:tgagDisPhyMin",
+    "otherdis_group_min":      "svapdxB1_1:tgagDisOthMin",
+    "braininjury_group_min":   "svapdxB1_1:tgagBraInjMin",
+    "hivaids_group_min":       "svapdxB1_1:tgagHivAidsMin",
+    "medicallyfrail_group_min":"svapdxB1_1:tgagMedFraMin",
+    "techdep_group_min":       "svapdxB1_1:tgagTecDepMin",
+    "autism_group_min":        "svapdxB1_1:tgddAutismMin",
+    "dd_group_min":            "svapdxB1_1:tgddDevDisMin",
+    "id_group_min":            "svapdxB1_1:tgddMenRetMin",
+    "mi_group_min":            "svapdxB1_1:tgmiMIMin",
+    "sed_group_min":           "svapdxB1_1:tgmiEmoDisMin",
 }
 
 TARGET_GROUP_MAX_IDS = {
-    "aged_group_max": "svapdxB1_1:tgagAgedMax",
+    "aged_group_max":          "svapdxB1_1:tgagAgedMax",
+    "physicaldis_group_max":   "svapdxB1_1:tgagDisPhyMax",
+    "otherdis_group_max":      "svapdxB1_1:tgagDisOthMax",
+    "braininjury_group_max":   "svapdxB1_1:tgagBraInjMax",
+    "hivaids_group_max":       "svapdxB1_1:tgagHivAidsMax",
+    "medicallyfrail_group_max":"svapdxB1_1:tgagMedFraMax",
+    "techdep_group_max":       "svapdxB1_1:tgagTecDepMax",
+    "autism_group_max":        "svapdxB1_1:tgddAutismMax",
+    "dd_group_max":            "svapdxB1_1:tgddDevDisMax",
+    "id_group_max":            "svapdxB1_1:tgddMenRetMax",
+    "mi_group_max":            "svapdxB1_1:tgmiMIMax",
+    "sed_group_max":           "svapdxB1_1:tgmiEmoDisMax",
 }
 
 
@@ -724,17 +751,15 @@ class HTMLTopExtractor:
                 elif checkbox_cell.find("span"):
                     result[var_name] = 0
 
-                # Age values (only for aged_group)
-                if var_name == "aged_group":
-                    min_p = (
-                        min_age_cell.find("p", class_="s31") if min_age_cell else None
-                    )
-                    if min_p:
-                        result["aged_group_min"] = min_p.get_text().strip()
-                    if max_age_cell:
-                        max_p = max_age_cell.find("p", class_="s31")
-                        if max_p:
-                            result["aged_group_max"] = max_p.get_text().strip()
+                # Age values for all groups
+                prefix = var_name  # e.g. "aged_group"
+                min_p = min_age_cell.find("p", class_="s31") if min_age_cell else None
+                if min_p:
+                    result[f"{prefix}_min"] = min_p.get_text().strip()
+                if max_age_cell:
+                    max_p = max_age_cell.find("p", class_="s31")
+                    if max_p:
+                        result[f"{prefix}_max"] = max_p.get_text().strip()
 
         return result
 
@@ -745,6 +770,13 @@ class HTMLTopExtractor:
             val = self._parse_b1_table().get(key, "")
         return val
 
+    def _b1_age(self, key: str, element_id: str) -> str:
+        """Get target group age (min or max): try element ID first, then table fallback."""
+        val = self._get_text_input_value_by_id(element_id)
+        if not val and self._is_htm:
+            val = self._parse_b1_table().get(key, "")
+        return val
+
     # Aged or Disabled - General
     @property
     def aged_group(self) -> Optional[int]:
@@ -752,48 +784,84 @@ class HTMLTopExtractor:
 
     @property
     def aged_group_min(self) -> str:
-        val = self._get_text_input_value_by_id(TARGET_GROUP_MIN_IDS["aged_group_min"])
-        if not val and self._is_htm:
-            val = self._parse_b1_table().get("aged_group_min", "")
-        return val
+        return self._b1_age("aged_group_min", TARGET_GROUP_MIN_IDS["aged_group_min"])
 
     @property
     def aged_group_max(self) -> str:
-        val = self._get_text_input_value_by_id(TARGET_GROUP_MAX_IDS["aged_group_max"])
-        if not val and self._is_htm:
-            val = self._parse_b1_table().get("aged_group_max", "")
-        return val
+        return self._b1_age("aged_group_max", TARGET_GROUP_MAX_IDS["aged_group_max"])
 
     @property
     def physicaldis_group(self) -> Optional[int]:
-        return self._b1(
-            "physicaldis_group", TARGET_GROUP_CHECKBOX_IDS["physicaldis_group"]
-        )
+        return self._b1("physicaldis_group", TARGET_GROUP_CHECKBOX_IDS["physicaldis_group"])
+
+    @property
+    def physicaldis_group_min(self) -> str:
+        return self._b1_age("physicaldis_group_min", TARGET_GROUP_MIN_IDS["physicaldis_group_min"])
+
+    @property
+    def physicaldis_group_max(self) -> str:
+        return self._b1_age("physicaldis_group_max", TARGET_GROUP_MAX_IDS["physicaldis_group_max"])
 
     @property
     def otherdis_group(self) -> Optional[int]:
         return self._b1("otherdis_group", TARGET_GROUP_CHECKBOX_IDS["otherdis_group"])
 
+    @property
+    def otherdis_group_min(self) -> str:
+        return self._b1_age("otherdis_group_min", TARGET_GROUP_MIN_IDS["otherdis_group_min"])
+
+    @property
+    def otherdis_group_max(self) -> str:
+        return self._b1_age("otherdis_group_max", TARGET_GROUP_MAX_IDS["otherdis_group_max"])
+
     # Aged or Disabled - Specific Subgroups
     @property
     def braininjury_group(self) -> Optional[int]:
-        return self._b1(
-            "braininjury_group", TARGET_GROUP_CHECKBOX_IDS["braininjury_group"]
-        )
+        return self._b1("braininjury_group", TARGET_GROUP_CHECKBOX_IDS["braininjury_group"])
+
+    @property
+    def braininjury_group_min(self) -> str:
+        return self._b1_age("braininjury_group_min", TARGET_GROUP_MIN_IDS["braininjury_group_min"])
+
+    @property
+    def braininjury_group_max(self) -> str:
+        return self._b1_age("braininjury_group_max", TARGET_GROUP_MAX_IDS["braininjury_group_max"])
 
     @property
     def hivaids_group(self) -> Optional[int]:
         return self._b1("hivaids_group", TARGET_GROUP_CHECKBOX_IDS["hivaids_group"])
 
     @property
+    def hivaids_group_min(self) -> str:
+        return self._b1_age("hivaids_group_min", TARGET_GROUP_MIN_IDS["hivaids_group_min"])
+
+    @property
+    def hivaids_group_max(self) -> str:
+        return self._b1_age("hivaids_group_max", TARGET_GROUP_MAX_IDS["hivaids_group_max"])
+
+    @property
     def medicallyfrail_group(self) -> Optional[int]:
-        return self._b1(
-            "medicallyfrail_group", TARGET_GROUP_CHECKBOX_IDS["medicallyfrail_group"]
-        )
+        return self._b1("medicallyfrail_group", TARGET_GROUP_CHECKBOX_IDS["medicallyfrail_group"])
+
+    @property
+    def medicallyfrail_group_min(self) -> str:
+        return self._b1_age("medicallyfrail_group_min", TARGET_GROUP_MIN_IDS["medicallyfrail_group_min"])
+
+    @property
+    def medicallyfrail_group_max(self) -> str:
+        return self._b1_age("medicallyfrail_group_max", TARGET_GROUP_MAX_IDS["medicallyfrail_group_max"])
 
     @property
     def techdep_group(self) -> Optional[int]:
         return self._b1("techdep_group", TARGET_GROUP_CHECKBOX_IDS["techdep_group"])
+
+    @property
+    def techdep_group_min(self) -> str:
+        return self._b1_age("techdep_group_min", TARGET_GROUP_MIN_IDS["techdep_group_min"])
+
+    @property
+    def techdep_group_max(self) -> str:
+        return self._b1_age("techdep_group_max", TARGET_GROUP_MAX_IDS["techdep_group_max"])
 
     # Intellectual/Developmental Disability
     @property
@@ -801,12 +869,36 @@ class HTMLTopExtractor:
         return self._b1("autism_group", TARGET_GROUP_CHECKBOX_IDS["autism_group"])
 
     @property
+    def autism_group_min(self) -> str:
+        return self._b1_age("autism_group_min", TARGET_GROUP_MIN_IDS["autism_group_min"])
+
+    @property
+    def autism_group_max(self) -> str:
+        return self._b1_age("autism_group_max", TARGET_GROUP_MAX_IDS["autism_group_max"])
+
+    @property
     def dd_group(self) -> Optional[int]:
         return self._b1("dd_group", TARGET_GROUP_CHECKBOX_IDS["dd_group"])
 
     @property
+    def dd_group_min(self) -> str:
+        return self._b1_age("dd_group_min", TARGET_GROUP_MIN_IDS["dd_group_min"])
+
+    @property
+    def dd_group_max(self) -> str:
+        return self._b1_age("dd_group_max", TARGET_GROUP_MAX_IDS["dd_group_max"])
+
+    @property
     def id_group(self) -> Optional[int]:
         return self._b1("id_group", TARGET_GROUP_CHECKBOX_IDS["id_group"])
+
+    @property
+    def id_group_min(self) -> str:
+        return self._b1_age("id_group_min", TARGET_GROUP_MIN_IDS["id_group_min"])
+
+    @property
+    def id_group_max(self) -> str:
+        return self._b1_age("id_group_max", TARGET_GROUP_MAX_IDS["id_group_max"])
 
     # Mental Illness
     @property
@@ -814,8 +906,24 @@ class HTMLTopExtractor:
         return self._b1("mi_group", TARGET_GROUP_CHECKBOX_IDS["mi_group"])
 
     @property
+    def mi_group_min(self) -> str:
+        return self._b1_age("mi_group_min", TARGET_GROUP_MIN_IDS["mi_group_min"])
+
+    @property
+    def mi_group_max(self) -> str:
+        return self._b1_age("mi_group_max", TARGET_GROUP_MAX_IDS["mi_group_max"])
+
+    @property
     def sed_group(self) -> Optional[int]:
         return self._b1("sed_group", TARGET_GROUP_CHECKBOX_IDS["sed_group"])
+
+    @property
+    def sed_group_min(self) -> str:
+        return self._b1_age("sed_group_min", TARGET_GROUP_MIN_IDS["sed_group_min"])
+
+    @property
+    def sed_group_max(self) -> str:
+        return self._b1_age("sed_group_max", TARGET_GROUP_MAX_IDS["sed_group_max"])
 
     # =========================================================================
     # APPENDIX B-2: INDIVIDUAL COST LIMIT
@@ -830,16 +938,6 @@ class HTMLTopExtractor:
     def cost_limit_pcntaboveinstit(self) -> str:
         """B-2-a: Specify the percentage above institutional costs."""
         return self._get_text_input_value_by_id("svapdxB2_1:elgIclExcCstPct")
-
-    @property
-    def cost_limit_instit(self) -> Optional[int]:
-        """B-2-a: Institutional Cost Limit - 100% of level of care cost."""
-        return self._get_checkbox_value_by_id("svapdxB2_1:elgIclType:2")
-
-    @property
-    def cost_limit_lowerinstit(self) -> Optional[int]:
-        """B-2-a: Cost Limit Lower Than Institutional Costs."""
-        return self._get_checkbox_value_by_id("svapdxB2_1:elgIclType:3")
 
     # =========================================================================
     # APPENDIX B-3: NUMBER OF INDIVIDUALS SERVED
@@ -1161,75 +1259,6 @@ class HTMLTopExtractor:
                 pass
         return val
 
-    @property
-    def spousal_impov_b(self) -> Optional[int]:
-        """B-5: Spousal impoverishment - use spousal post-eligibility rules."""
-        return self._get_checkbox_value_by_id("svapdxB5_1:elgIncSpoImpRlsType:0")
-
-    @property
-    def spousal_impov_c(self) -> Optional[int]:
-        """B-5: Spousal impoverishment - use regular post-eligibility rules."""
-        return self._get_checkbox_value_by_id("svapdxB5_1:elgIncSpoImpRlsType:1")
-
-    # =========================================================================
-    # APPENDIX B-6: EVALUATION / REEVALUATION OF LEVEL OF CARE
-    # =========================================================================
-
-    @property
-    def min_numservices(self) -> str:
-        """B-6-a-i: Minimum number of waiver services (text box)."""
-        return self._get_text_input_value_by_id("svapdxB6_1:elgEvalSvcMinQty")
-
-    @property
-    def local_eval_a(self) -> Optional[int]:
-        """B-6-b: Evaluations performed directly by the Medicaid agency."""
-        return self._get_checkbox_value_by_id("svapdxB6_1:elgEvalRespType:0")
-
-    @property
-    def local_eval_b(self) -> Optional[int]:
-        """B-6-b: Evaluations performed by the operating agency in Appendix A."""
-        return self._get_checkbox_value_by_id("svapdxB6_1:elgEvalRespType:1")
-
-    @property
-    def local_eval_c(self) -> Optional[int]:
-        """B-6-b: Evaluations performed by an entity under contract with the Medicaid agency."""
-        return self._get_checkbox_value_by_id("svapdxB6_1:elgEvalRespType:2")
-
-    @property
-    def local_eval_d(self) -> Optional[int]:
-        """B-6-b: Evaluations performed by an Other entity."""
-        return self._get_checkbox_value_by_id("svapdxB6_1:elgEvalRespType:3")
-
-    @property
-    def local_eval_instrument_same(self) -> Optional[int]:
-        """B-6-e: Same instrument used for waiver and institutional level of care."""
-        return self._get_checkbox_value_by_id("svapdxB6_1:elgEvalLOCInstType:0")
-
-    @property
-    def local_eval_instrument_diff(self) -> Optional[int]:
-        """B-6-e: Different instrument used for waiver vs. institutional level of care."""
-        return self._get_checkbox_value_by_id("svapdxB6_1:elgEvalLOCInstType:1")
-
-    @property
-    def reeval_sched_3mo(self) -> Optional[int]:
-        """B-6-g: Reevaluation every three months."""
-        return self._get_checkbox_value_by_id("svapdxB6_1:elgRevalSchType:0")
-
-    @property
-    def reeval_sched_6mo(self) -> Optional[int]:
-        """B-6-g: Reevaluation every six months."""
-        return self._get_checkbox_value_by_id("svapdxB6_1:elgRevalSchType:1")
-
-    @property
-    def reeval_sched_12mo(self) -> Optional[int]:
-        """B-6-g: Reevaluation every twelve months."""
-        return self._get_checkbox_value_by_id("svapdxB6_1:elgRevalSchType:2")
-
-    @property
-    def reeval_sched_other(self) -> Optional[int]:
-        """B-6-g: Reevaluation on other schedule."""
-        return self._get_checkbox_value_by_id("svapdxB6_1:elgRevalSchType:3")
-
     # =========================================================================
     # MAIN EXTRACTION METHOD
     # =========================================================================
@@ -1264,21 +1293,43 @@ class HTMLTopExtractor:
         data["waive_geographic_limits"] = self.waive_geographic_limits
         data["waive_geographic_lipd"] = self.waive_geographic_lipd
 
-        # Appendix B-1: Target Groups (14 columns - only aged has min/max)
+        # Appendix B-1: Target Groups (36 columns - checkbox + min + max for all 12 groups)
         data["aged_group"] = self.aged_group
         data["aged_group_min"] = self.aged_group_min
         data["aged_group_max"] = self.aged_group_max
         data["physicaldis_group"] = self.physicaldis_group
+        data["physicaldis_group_min"] = self.physicaldis_group_min
+        data["physicaldis_group_max"] = self.physicaldis_group_max
         data["otherdis_group"] = self.otherdis_group
+        data["otherdis_group_min"] = self.otherdis_group_min
+        data["otherdis_group_max"] = self.otherdis_group_max
         data["braininjury_group"] = self.braininjury_group
+        data["braininjury_group_min"] = self.braininjury_group_min
+        data["braininjury_group_max"] = self.braininjury_group_max
         data["hivaids_group"] = self.hivaids_group
+        data["hivaids_group_min"] = self.hivaids_group_min
+        data["hivaids_group_max"] = self.hivaids_group_max
         data["medicallyfrail_group"] = self.medicallyfrail_group
+        data["medicallyfrail_group_min"] = self.medicallyfrail_group_min
+        data["medicallyfrail_group_max"] = self.medicallyfrail_group_max
         data["techdep_group"] = self.techdep_group
+        data["techdep_group_min"] = self.techdep_group_min
+        data["techdep_group_max"] = self.techdep_group_max
         data["autism_group"] = self.autism_group
+        data["autism_group_min"] = self.autism_group_min
+        data["autism_group_max"] = self.autism_group_max
         data["dd_group"] = self.dd_group
+        data["dd_group_min"] = self.dd_group_min
+        data["dd_group_max"] = self.dd_group_max
         data["id_group"] = self.id_group
+        data["id_group_min"] = self.id_group_min
+        data["id_group_max"] = self.id_group_max
         data["mi_group"] = self.mi_group
+        data["mi_group_min"] = self.mi_group_min
+        data["mi_group_max"] = self.mi_group_max
         data["sed_group"] = self.sed_group
+        data["sed_group_min"] = self.sed_group_min
+        data["sed_group_max"] = self.sed_group_max
 
         # Appendix B-2: Individual Cost Limit
         data["cost_limit_pcntaboveinstit"] = self.cost_limit_pcntaboveinstit
@@ -1313,28 +1364,6 @@ class HTMLTopExtractor:
 
         # Appendix B-5: Post-Eligibility Treatment
         data["spousal_impov_a"] = self.spousal_impov_a
-        data["spousal_impov_b"] = self.spousal_impov_b
-        data["spousal_impov_c"] = self.spousal_impov_c
-
-        # Appendix B-6: Level-of-Care Evaluation
-        data["min_numservices"] = self.min_numservices
-        data["local_eval_a"] = self.local_eval_a
-        data["local_eval_b"] = self.local_eval_b
-        data["local_eval_c"] = self.local_eval_c
-        data["local_eval_d"] = self.local_eval_d
-        data["local_eval_instrument_same"] = self.local_eval_instrument_same
-        data["local_eval_instrument_diff"] = self.local_eval_instrument_diff
-        data["reeval_sched_3mo"] = self.reeval_sched_3mo
-        data["reeval_sched_6mo"] = self.reeval_sched_6mo
-        data["reeval_sched_12mo"] = self.reeval_sched_12mo
-        data["reeval_sched_other"] = self.reeval_sched_other
-
-        # NOTE: split-flag → merged-column collapse is intentionally NOT
-        # called here. friend's downstream code (get_summary, merge
-        # pipeline) expects the split flags to remain. The collapse
-        # happens externally (planned in merge_extractions.py or a
-        # post-process script) so this extractor's contract is
-        # preserved.
 
         return data
 
@@ -1444,7 +1473,7 @@ def get_summary(df: pd.DataFrame) -> pd.DataFrame:
             continue
 
         # These are always text even if they contain numbers
-        _text_cols = {"aged_group_min", "aged_group_max", "eligibility_5_percent",
+        _text_cols = {c for c in df.columns if c.endswith("_group_min") or c.endswith("_group_max")} | {"eligibility_5_percent",
                       "cost_limit_pcntaboveinstit", "numberofbenes_year1",
                       "numberofbenes_year2", "numberofbenes_year3",
                       "numberofbenes_year4", "numberofbenes_year5",

@@ -21,11 +21,26 @@ Usage:
 """
 
 import os
+import re
 import sys
 import csv
 import argparse
 from pathlib import Path
 import pandas as pd
+
+_SKIP_FILENAME = re.compile(
+    r"approval.?letter|approvalletter|email|submission|submittal"
+    r"|amendment(?!.*R\d{2})|cover.?letter|fromokcaid",
+    re.IGNORECASE,
+)
+
+def _is_waiver_doc(path: Path) -> bool:
+    stem = re.sub(r"[.\-_ ]", "", path.stem).upper()
+    if not re.match(r"^[A-Z]{2}\d{4,5}R\d+", stem):
+        return False
+    if _SKIP_FILENAME.search(path.stem):
+        return False
+    return True
 
 # Add parent directory to path so we can import extractors
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -41,6 +56,14 @@ from extractors.text_extractor import (
     TextTertiaryExtractor,
     TOP_COLUMNS as TEXT_TOP_COLUMNS,
     TERTIARY_COLUMNS as TEXT_TERTIARY_COLUMNS,
+)
+from extractors.html_extractor.html_secondary_extractor import (
+    HTMLSecondaryExtractor,
+    ALL_COLUMNS as HTML_SECONDARY_COLUMNS,
+)
+from extractors.text_extractor.text_secondary_extractor import (
+    TextSecondaryExtractor,
+    ALL_COLUMNS as TEXT_SECONDARY_COLUMNS,
 )
 
 
@@ -58,25 +81,26 @@ def load_text_lines(file_path: str) -> list:
 
 def run_html(input_dir: str, output_dir: str, tier: str, verbose: bool = True):
     """Run HTML extraction for the specified tier(s)."""
-    htm_files = sorted(
-        list(Path(input_dir).rglob("*.htm")) + list(Path(input_dir).rglob("*.html"))
-    )
+    all_htm = list(Path(input_dir).rglob("*.htm")) + list(Path(input_dir).rglob("*.html"))
+    htm_files = sorted(f for f in all_htm if _is_waiver_doc(f))
     if verbose:
-        print(f"[HTML] Found {len(htm_files)} files")
+        print(f"[HTML] Found {len(all_htm)} files, processing {len(htm_files)} waiver docs (skipped {len(all_htm)-len(htm_files)} non-waiver)")
 
-    top_results, tertiary_results, errors = [], [], []
+    top_results, secondary_results, tertiary_results, errors = [], [], [], []
 
     for i, fp in enumerate(htm_files):
         if verbose and (i + 1) % 100 == 0:
-            print(f"  [{i+1}/{len(htm_files)}] Success: top={len(top_results)}, ter={len(tertiary_results)}")
+            print(f"  [{i+1}/{len(htm_files)}] Success: top={len(top_results)}, sec={len(secondary_results)}, ter={len(tertiary_results)}")
         try:
             doc_id = Path(fp).stem
             html = load_html(str(fp))
             is_htm = fp.suffix.lower() == ".htm"
+            from bs4 import BeautifulSoup
+            doc = BeautifulSoup(html, "html.parser")
             if tier in ("top", "all"):
-                from bs4 import BeautifulSoup
-                doc = BeautifulSoup(html, "html.parser")
                 top_results.append(HTMLTopExtractor(doc_id, doc, is_htm=is_htm).extract_all())
+            if tier in ("secondary", "all"):
+                secondary_results.append(HTMLSecondaryExtractor(doc_id, doc, is_htm=is_htm).extract_all())
             if tier in ("tertiary", "all"):
                 tertiary_results.append(HTMLTertiaryExtractor(doc_id, html, is_htm=is_htm).extract_all())
         except Exception as e:
@@ -91,6 +115,13 @@ def run_html(input_dir: str, output_dir: str, tier: str, verbose: bool = True):
         if verbose:
             print(f"[HTML] Top: {len(df)} records -> {out}")
 
+    if tier in ("secondary", "all") and secondary_results:
+        df = pd.DataFrame(secondary_results, columns=HTML_SECONDARY_COLUMNS)
+        out = os.path.join(output_dir, "html_secondary_extraction.csv")
+        df.to_csv(out, index=False, quoting=csv.QUOTE_ALL)
+        if verbose:
+            print(f"[HTML] Secondary: {len(df)} records -> {out}")
+
     if tier in ("tertiary", "all") and tertiary_results:
         df = pd.DataFrame(tertiary_results, columns=HTML_TERTIARY_COLUMNS)
         out = os.path.join(output_dir, "html_tertiary_extraction.csv")
@@ -104,20 +135,23 @@ def run_html(input_dir: str, output_dir: str, tier: str, verbose: bool = True):
 
 def run_text(input_dir: str, output_dir: str, tier: str, verbose: bool = True):
     """Run Text extraction for the specified tier(s)."""
-    txt_files = sorted(Path(input_dir).rglob("*.txt"))
+    all_txt = list(Path(input_dir).rglob("*.txt"))
+    txt_files = sorted(f for f in all_txt if _is_waiver_doc(f))
     if verbose:
-        print(f"[TEXT] Found {len(txt_files)} files")
+        print(f"[TEXT] Found {len(all_txt)} files, processing {len(txt_files)} waiver docs (skipped {len(all_txt)-len(txt_files)} non-waiver)")
 
-    top_results, tertiary_results, errors = [], [], []
+    top_results, secondary_results, tertiary_results, errors = [], [], [], []
 
     for i, fp in enumerate(txt_files):
         if verbose and (i + 1) % 100 == 0:
-            print(f"  [{i+1}/{len(txt_files)}] Success: top={len(top_results)}, ter={len(tertiary_results)}")
+            print(f"  [{i+1}/{len(txt_files)}] Success: top={len(top_results)}, sec={len(secondary_results)}, ter={len(tertiary_results)}")
         try:
             doc_id = Path(fp).stem
             lines = load_text_lines(str(fp))
             if tier in ("top", "all"):
                 top_results.append(TextTopExtractor(doc_id, lines).extract_all())
+            if tier in ("secondary", "all"):
+                secondary_results.append(TextSecondaryExtractor(doc_id, lines).extract_all())
             if tier in ("tertiary", "all"):
                 tertiary_results.append(TextTertiaryExtractor(doc_id, lines).extract_all())
         except Exception as e:
@@ -132,6 +166,13 @@ def run_text(input_dir: str, output_dir: str, tier: str, verbose: bool = True):
         if verbose:
             print(f"[TEXT] Top: {len(df)} records -> {out}")
 
+    if tier in ("secondary", "all") and secondary_results:
+        df = pd.DataFrame(secondary_results, columns=TEXT_SECONDARY_COLUMNS)
+        out = os.path.join(output_dir, "text_secondary_extraction.csv")
+        df.to_csv(out, index=False, quoting=csv.QUOTE_ALL)
+        if verbose:
+            print(f"[TEXT] Secondary: {len(df)} records -> {out}")
+
     if tier in ("tertiary", "all") and tertiary_results:
         df = pd.DataFrame(tertiary_results, columns=TEXT_TERTIARY_COLUMNS)
         out = os.path.join(output_dir, "text_tertiary_extraction.csv")
@@ -143,7 +184,7 @@ def run_text(input_dir: str, output_dir: str, tier: str, verbose: bool = True):
         print(f"[TEXT] Errors: {len(errors)}")
 
 
-def test_single_file(file_path: str):
+def test_single_file(file_path: str, tier: str = "all"):
     """Test extraction on a single file and print results."""
     fp = Path(file_path)
     doc_id = fp.stem
@@ -157,27 +198,37 @@ def test_single_file(file_path: str):
         from bs4 import BeautifulSoup
         html = load_html(file_path)
         doc = BeautifulSoup(html, "html.parser")
-        top = HTMLTopExtractor(doc_id, doc).extract_all()
-        ter = HTMLTertiaryExtractor(doc_id, html).extract_all()
+        is_htm = ext == ".htm"
+        top = HTMLTopExtractor(doc_id, doc, is_htm=is_htm).extract_all()
+        sec = HTMLSecondaryExtractor(doc_id, doc, is_htm=is_htm).extract_all()
+        ter = HTMLTertiaryExtractor(doc_id, html, is_htm=is_htm).extract_all()
     elif ext == ".txt":
         lines = load_text_lines(file_path)
         top = TextTopExtractor(doc_id, lines).extract_all()
+        sec = TextSecondaryExtractor(doc_id, lines).extract_all()
         ter = TextTertiaryExtractor(doc_id, lines).extract_all()
     else:
         print(f"Unsupported file type: {ext}")
         return
 
-    print(f"\n[TOP] {len(top)} fields")
-    for k, v in list(top.items())[:10]:
-        print(f"  {k}: {v}")
-    print("  ...")
+    if tier in ("top", "all"):
+        print(f"\n[TOP] {len(top)} fields")
+        for k, v in list(top.items())[:10]:
+            print(f"  {k}: {v}")
+        print("  ...")
 
-    print(f"\n[TERTIARY] {len(ter)} fields")
-    filled_ter = [(k, v) for k, v in ter.items() if v != "" and v is not None and v != 0]
-    for k, v in filled_ter[:15]:
-        print(f"  {k}: {v}")
-    if len(filled_ter) > 15:
-        print(f"  ... ({len(filled_ter) - 15} more filled)")
+    if tier in ("secondary", "all"):
+        print(f"\n[SECONDARY] {len(sec)} fields")
+        for k, v in sec.items():
+            print(f"  {k}: {v}")
+
+    if tier in ("tertiary", "all"):
+        print(f"\n[TERTIARY] {len(ter)} fields")
+        filled_ter = [(k, v) for k, v in ter.items() if v != "" and v is not None and v != 0]
+        for k, v in filled_ter[:15]:
+            print(f"  {k}: {v}")
+        if len(filled_ter) > 15:
+            print(f"  ... ({len(filled_ter) - 15} more filled)")
 
 
 def main():
@@ -185,13 +236,13 @@ def main():
     parser.add_argument("--input_dir", type=str, help="Directory containing waiver documents")
     parser.add_argument("--output_dir", type=str, default="./output", help="Output directory for CSVs")
     parser.add_argument("--mode", choices=["html", "text", "both"], default="both", help="Which format to extract")
-    parser.add_argument("--tier", choices=["top", "tertiary", "all"], default="all", help="Which priority tier to extract")
+    parser.add_argument("--tier", choices=["top", "secondary", "tertiary", "all"], default="all", help="Which priority tier to extract")
     parser.add_argument("--test_file", type=str, help="Test a single file")
 
     args = parser.parse_args()
 
     if args.test_file:
-        test_single_file(args.test_file)
+        test_single_file(args.test_file, tier=args.tier)
         return
 
     if not args.input_dir:
