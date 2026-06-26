@@ -261,6 +261,18 @@ class HTMLTopExtractor:
         self.document_id = document_id
         self.document = document
         self._is_htm = is_htm
+        # Detect whether checkbox selection state is actually encoded in this document.
+        # Flat PDF-converted files have <span></span> before every label regardless of
+        # state, so <span> cannot distinguish checked vs unchecked in those files.
+        # Only trust checkbox state when a real marker is present:
+        #   - <input checked> (native form element)
+        #   - checked glyph (\ue008) inside a <p> body (native .htm)
+        _glyph = ''
+        _glyph_in_body = any(
+            _glyph in (p.get_text() or "") for p in document.find_all("p")
+        )
+        _checked_inputs = bool(document.find("input", {"checked": True}))
+        self._has_checkbox_markers = _checked_inputs or _glyph_in_body
 
     # =========================================================================
     # HELPER METHODS
@@ -273,58 +285,85 @@ class HTMLTopExtractor:
         return int("checked" in element.attrs)
 
     def _get_checkbox_value_by_id(self, element_id: str):
-        """Get checkbox value by element ID with format-aware logic.
+        """Get checkbox value by element ID.
 
-        .htm (native form): input present → use checked attribute; missing → try glyph fallback
-        .html (PDF-converted): input present → use checked attribute; missing → return "" (unreliable)
+        1. Native <input id=...> element -> checked attribute (both .htm and .html)
+        2. .htm: glyph near element ID tag
+        3. .html caller should pass label to _check_label_checkbox for class="s9"/glyph fallback
         """
         element = self.document.find("input", {"id": element_id})
         if element is not None:
             return self._is_checked(element)
 
-        if not self._is_htm:
-            return ""
-
-        # .htm fallback: look for the glyph  near the element ID in surrounding text
-        tag = self.document.find(id=element_id)
-        if tag:
-            cell_text = tag.get_text()
-            if "" in cell_text:
-                return 1
-            if tag.find("br") or tag.find("span"):
-                return 0
+        if self._is_htm:
+            tag = self.document.find(id=element_id)
+            if tag:
+                cell_text = tag.get_text()
+                if "" in cell_text:
+                    return 1
+                if tag.find("br") or tag.find("span"):
+                    return 0
         return None
 
     def _check_label_checkbox(self, label_text: str):
-        """Detect checkbox state for .htm files.
+        """Detect checkbox state from label text for both .htm and .html files.
 
-        Finds the <p> containing label_text, then checks the raw HTML immediately
-        before the label for the glyph (checked) or <span/> (unchecked).
-        Returns 1, 0, or "" (not found / not .htm).
+        .html: Finds the <span> directly containing the label, then walks backward
+            through its siblings. If a sibling contains the glyph before hitting
+            any non-empty text (which would belong to a prior bundled item), returns 1.
+            This handles <p> tags that bundle multiple items separated by <span>s.
+        .htm: looks for checked glyph or <span/> before label text in raw HTML.
+        Returns 1, 0, or None if not found.
         """
-        if not self._is_htm:
-            return ""
+        from bs4 import NavigableString as _NS
         p = self.document.find(
             lambda tag: tag.name == "p" and label_text in tag.get_text()
         )
         if p is None:
-            return ""
+            return None
 
-        # Use raw HTML string: find what appears immediately before label_text
+        if not self._is_htm:
+            if not self._has_checkbox_markers:
+                return None
+            glyph = ""
+            # Find the smallest <span> that contains only this label's text
+            best_span = None
+            for span in p.find_all("span"):
+                t = span.get_text()
+                if label_text in t and len(t) < len(label_text) + 50:
+                    best_span = span
+                    break
+            if best_span is None:
+                # Label is directly in <p> — check p's own text for glyph
+                return 1 if glyph in p.get_text() else 0
+            # Walk backward through siblings; glyph before any non-empty text = checked
+            for sib in best_span.previous_siblings:
+                if isinstance(sib, _NS):
+                    t = str(sib)
+                    if glyph in t:
+                        return 1
+                    if t.strip():
+                        return 0
+                else:
+                    t = sib.get_text()
+                    if glyph in t:
+                        return 1
+                    if t.strip():
+                        return 0
+            return 0
+
+        # .htm: checked glyph = checked, <span/> = unchecked
         raw = str(p)
         label_pos = raw.find(label_text)
         if label_pos == -1:
-            return ""
-
-        # Look at the ~100 chars of raw HTML before the label
+            return None
         pre = raw[:label_pos]
-        # Glyph character \ue008 indicates checked
-        if "\ue008" in pre:
+        if "" in pre:
             return 1
-        # <span/> immediately before means unchecked
         if "<span/>" in pre or "<span>" in pre:
             return 0
-        return ""
+        return None
+
 
     def _get_text_input_value_by_id(self, element_id: str) -> str:
         """Get text input value by element ID."""
@@ -550,7 +589,7 @@ class HTMLTopExtractor:
     def hospital_loc(self) -> Optional[int]:
         """Hospital level of care checkbox."""
         val = self._get_checkbox_value_by_id(LOC_CHECKBOX_IDS["hospital_loc"])
-        if val == "" or val is None:
+        if val is None:
             val = self._check_label_checkbox("Hospital")
         return val
 
@@ -563,7 +602,7 @@ class HTMLTopExtractor:
     def nursing_facility_loc(self) -> Optional[int]:
         """Nursing facility level of care checkbox."""
         val = self._get_checkbox_value_by_id(LOC_CHECKBOX_IDS["nursing_facility_loc"])
-        if val == "" or val is None:
+        if val is None:
             val = self._check_label_checkbox("Nursing Facility")
         return val
 
@@ -578,7 +617,7 @@ class HTMLTopExtractor:
     def ifc_loc(self) -> Optional[int]:
         """ICF/IID level of care checkbox."""
         val = self._get_checkbox_value_by_id(LOC_CHECKBOX_IDS["ifc_loc"])
-        if val == "" or val is None:
+        if val is None:
             val = self._check_label_checkbox(
                 "Intermediate Care Facility for Individuals with Intellectual Disabilities"
             )
@@ -599,7 +638,7 @@ class HTMLTopExtractor:
         val = self._get_checkbox_value_by_id(
             CONCURRENT_CHECKBOX_IDS["concurrent_1915a"]
         )
-        if val == "" or val is None:
+        if val is None:
             val = self._check_label_checkbox("§1915(a)(1)(a)")
         return val
 
@@ -609,7 +648,7 @@ class HTMLTopExtractor:
         val = self._get_checkbox_value_by_id(
             CONCURRENT_CHECKBOX_IDS["concurrent_1915b"]
         )
-        if val == "" or val is None:
+        if val is None:
             val = self._check_label_checkbox("§1915(b) of the Act")
         return val
 
@@ -619,7 +658,7 @@ class HTMLTopExtractor:
         val = self._get_checkbox_value_by_id(
             CONCURRENT_CHECKBOX_IDS["concurrent_1932a"]
         )
-        if val == "" or val is None:
+        if val is None:
             val = self._check_label_checkbox("§1932(a) of the Act")
         return val
 
@@ -629,7 +668,7 @@ class HTMLTopExtractor:
         val = self._get_checkbox_value_by_id(
             CONCURRENT_CHECKBOX_IDS["concurrent_1915i"]
         )
-        if val == "" or val is None:
+        if val is None:
             val = self._check_label_checkbox("§1915(i) of the Act")
         return val
 
@@ -639,7 +678,7 @@ class HTMLTopExtractor:
         val = self._get_checkbox_value_by_id(
             CONCURRENT_CHECKBOX_IDS["concurrent_1915j"]
         )
-        if val == "" or val is None:
+        if val is None:
             val = self._check_label_checkbox("§1915(j) of the Act")
         return val
 
@@ -647,7 +686,7 @@ class HTMLTopExtractor:
     def concurrent_1115(self) -> Optional[int]:
         """Program under §1115 checkbox."""
         val = self._get_checkbox_value_by_id(CONCURRENT_CHECKBOX_IDS["concurrent_1115"])
-        if val == "" or val is None:
+        if val is None:
             val = self._check_label_checkbox("§1115 of the Act")
         return val
 
@@ -655,7 +694,7 @@ class HTMLTopExtractor:
     def dual_elg(self) -> Optional[int]:
         """Dual eligibility for Medicaid and Medicare checkbox."""
         val = self._get_checkbox_value_by_id(CONCURRENT_CHECKBOX_IDS["dual_elg"])
-        if val == "" or val is None:
+        if val is None:
             val = self._check_label_checkbox("eligible for both Medicare and Medicaid")
         return val
 
@@ -763,18 +802,94 @@ class HTMLTopExtractor:
 
         return result
 
+    def _parse_b1_html(self) -> dict:
+        """Parse B-1 target groups from PDF-converted .html files.
+
+        Per-subgroup indicator: <p class="s28"> with glyph immediately before
+        the <p class="s5"> label = checked (1). Absence of s28 before label = unchecked (0).
+        Age value follows label in <p class="s8"> within a few positions.
+        Section headers (s37/s9) scope which subgroups are in scope but do NOT
+        determine individual subgroup checkbox state.
+        """
+        if hasattr(self, "_cached_b1_html"):
+            return self._cached_b1_html
+
+        result = {}
+        glyph = ""
+        label_map = self._B1_LABEL_MAP
+        all_p = self.document.find_all("p")
+
+        # Only parse within the B-1 section (between "Target Group" header and B-2)
+        b1_start, b1_end = None, len(all_p)
+        for i, p in enumerate(all_p):
+            txt = p.get_text(strip=True)
+            cls = p.get("class", [])
+            if b1_start is None and "Target Group" in txt:
+                b1_start = i
+            if b1_start and i > b1_start and "B-2" in txt:
+                b1_end = i
+                break
+        if b1_start is None:
+            self._cached_b1_html = result
+            return result
+
+        section = all_p[b1_start:b1_end]
+        for i, p in enumerate(section):
+            cls = p.get("class", [])
+            txt = p.get_text(strip=True)
+
+            if "s5" in cls and txt in label_map:
+                var = label_map[txt]
+                # Look back up to 4 positions for s28 glyph = checked indicator
+                checked = 0
+                for look in range(1, 5):
+                    if i - look < 0:
+                        break
+                    prev = section[i - look]
+                    prev_cls = prev.get("class", [])
+                    prev_txt = prev.get_text(strip=True)
+                    if "s28" in prev_cls and glyph in prev_txt:
+                        checked = 1
+                        break
+                    # Stop looking back if we hit another label or section header
+                    if "s5" in prev_cls or "s37" in prev_cls or "s9" in prev_cls:
+                        break
+                result[var] = checked
+
+                # Look ahead up to 4 positions for age value in s8
+                for look in range(1, 5):
+                    if i + look >= len(section):
+                        break
+                    age_p = section[i + look]
+                    age_cls = age_p.get("class", [])
+                    age_txt = age_p.get_text(strip=True)
+                    if "s8" in age_cls and age_txt.isdigit():
+                        result[f"{var}_min"] = age_txt
+                        break
+                    if "s5" in age_cls or "s37" in age_cls or "s9" in age_cls:
+                        break
+
+        self._cached_b1_html = result
+        return result
+
     def _b1(self, key: str, element_id: str):
-        """Get target group checkbox: try element ID first, then table fallback."""
+        """Get target group checkbox: try element ID, then .htm table, then .html paragraph parse."""
         val = self._get_checkbox_value_by_id(element_id)
-        if (val == "" or val is None) and self._is_htm:
-            val = self._parse_b1_table().get(key, "")
+        if val is None:
+            if self._is_htm:
+                val = self._parse_b1_table().get(key, "")
+            else:
+                val = self._parse_b1_html().get(key, "")
         return val
 
     def _b1_age(self, key: str, element_id: str) -> str:
-        """Get target group age (min or max): try element ID first, then table fallback."""
+        """Get target group age: try element ID, then .htm table, then .html paragraph parse."""
         val = self._get_text_input_value_by_id(element_id)
-        if not val and self._is_htm:
-            val = self._parse_b1_table().get(key, "")
+        if not val:
+            if self._is_htm:
+                val = self._parse_b1_table().get(key, "")
+            else:
+                val = self._parse_b1_html().get(key, "")
         return val
 
     # Aged or Disabled - General
@@ -944,18 +1059,19 @@ class HTMLTopExtractor:
     # =========================================================================
 
     def _parse_b3_table(self, table_label: str) -> dict:
-        """Parse a B-3 table (B-3-a or B-3-b) for .htm files.
+        """Parse a B-3 table (B-3-a or B-3-b) for both .htm and .html files.
 
-        Each year row has <p class="s22">Year N</p> in col 0 and the value
-        in <p class="s31"> in the middle column.
+        .htm: label paragraph has class="s32"; value in <p class="s31">.
+        .html: label paragraph has class="s38"; value in <p class="s8">.
         Returns {1: val, 2: val, ...} for years 1-5.
         """
-        if not self._is_htm:
-            return {}
         table = None
-        for p in self.document.find_all("p", class_="s32"):
-            if table_label in p.get_text():
-                table = p.find_next("table")
+        for cls in ("s32", "s38"):
+            for p in self.document.find_all("p", class_=cls):
+                if table_label in p.get_text():
+                    table = p.find_next("table")
+                    break
+            if table:
                 break
         if not table:
             return {}
@@ -963,19 +1079,19 @@ class HTMLTopExtractor:
         result = {}
         for row in table.find_all("tr"):
             cells = row.find_all("td")
-            # Year label cell
             year_text = cells[0].get_text().strip() if cells else ""
             for yr in range(1, 6):
                 if f"Year {yr}" in year_text:
-                    # Value is in <p class="s31"> anywhere in this row or next sibling row
-                    val_p = row.find("p", class_="s31")
+                    # Try s31 (.htm) then s8 (.html), then check next row
+                    val_p = row.find("p", class_="s31") or row.find("p", class_="s8")
                     if not val_p:
-                        # Value may be in the next <tr>
                         next_row = row.find_next_sibling("tr")
                         if next_row:
-                            val_p = next_row.find("p", class_="s31")
+                            val_p = next_row.find("p", class_="s31") or next_row.find("p", class_="s8")
                     if val_p:
-                        result[yr] = val_p.get_text().strip()
+                        v = val_p.get_text().strip()
+                        if v:
+                            result[yr] = v
                     break
         return result
 
@@ -1055,7 +1171,7 @@ class HTMLTopExtractor:
     def entrantselection(self) -> str:
         """B-3 (3 of 4): Selection of Entrants to the Waiver."""
         val = self._get_textarea_value_by_id("svapdxB3_3:elgQtyEntSelDesc")
-        if not val and self._is_htm:
+        if not val:
             try:
                 label = self.document.find(
                     string=lambda x: x
@@ -1091,7 +1207,7 @@ class HTMLTopExtractor:
     def eligibility_1(self) -> Optional[int]:
         """Low income families with children."""
         val = self._get_checkbox_value_by_id("svapdxB4_1:elgGrpSec1931")
-        if val == "" or val is None:
+        if val is None:
             val = self._check_label_checkbox("Low income families with children")
         return val
 
@@ -1099,7 +1215,7 @@ class HTMLTopExtractor:
     def eligibility_2(self) -> Optional[int]:
         """SSI recipients."""
         val = self._get_checkbox_value_by_id("svapdxB4_1:elgGrpSSIRcp")
-        if val == "" or val is None:
+        if val is None:
             val = self._check_label_checkbox("SSI recipients")
         return val
 
@@ -1107,7 +1223,7 @@ class HTMLTopExtractor:
     def eligibility_3(self) -> Optional[int]:
         """Aged, blind or disabled in 209(b) states."""
         val = self._get_checkbox_value_by_id("svapdxB4_1:elgGrpAbd")
-        if val == "" or val is None:
+        if val is None:
             val = self._check_label_checkbox("Aged, blind or disabled in 209(b)")
         return val
 
@@ -1115,7 +1231,7 @@ class HTMLTopExtractor:
     def eligibility_4(self) -> Optional[int]:
         """Optional state supplement recipients."""
         val = self._get_checkbox_value_by_id("svapdxB4_1:elgGrpStSupRec")
-        if val == "" or val is None:
+        if val is None:
             val = self._check_label_checkbox("Optional State supplement recipients")
         return val
 
@@ -1123,7 +1239,7 @@ class HTMLTopExtractor:
     def eligibility_5(self) -> Optional[int]:
         """Optional categorically needy aged and/or disabled individuals."""
         val = self._get_checkbox_value_by_id("svapdxB4_1:elgGrpCatNdy")
-        if val == "" or val is None:
+        if val is None:
             val = self._check_label_checkbox("Optional categorically needy aged")
         return val
 
@@ -1131,7 +1247,7 @@ class HTMLTopExtractor:
     def eligibility_5_percent(self) -> str:
         """Eligibility 5: Specify percentage below 100% FPL."""
         val = self._get_text_input_value_by_id("svapdxB4_1:elgGrpCatNdyFPLPct")
-        if not val and self._is_htm:
+        if not val:
             try:
                 label = self.document.find(
                     string=lambda x: x and "Specify percentage" in str(x)
@@ -1158,7 +1274,7 @@ class HTMLTopExtractor:
     def eligibility_6(self) -> Optional[int]:
         """Working individuals with disabilities (BBA)."""
         val = self._get_checkbox_value_by_id("svapdxB4_1:elgGrpWrkDisBBA")
-        if val == "" or val is None:
+        if val is None:
             val = self._check_label_checkbox("BBA working disabled group")
         return val
 
@@ -1166,7 +1282,7 @@ class HTMLTopExtractor:
     def eligibility_7(self) -> Optional[int]:
         """Working individuals with disabilities (TWWIIA Basic)."""
         val = self._get_checkbox_value_by_id("svapdxB4_1:elgGrpWrkDisTBCG")
-        if val == "" or val is None:
+        if val is None:
             val = self._check_label_checkbox("TWWIIA Basic Coverage Group")
         return val
 
@@ -1174,19 +1290,15 @@ class HTMLTopExtractor:
     def eligibility_8(self) -> Optional[int]:
         """Working individuals with disabilities (TWWIIA Medical Improvement)."""
         val = self._get_checkbox_value_by_id("svapdxB4_1:elgGrpWrkDisTMICG")
-        if val == "" or val is None:
+        if val is None:
             val = self._check_label_checkbox("TWWIIA Medical Improvement")
-        # Only return if it looks like a real number/percentage
-        if val:
-            cleaned = re.sub(r"[^\d.]", "", str(val)).strip()
-            return cleaned if cleaned else ""
-        return ""
+        return val
 
     @property
     def eligibility_9(self) -> Optional[int]:
         """Disabled individuals age 18 or younger (TEFRA 134)."""
         val = self._get_checkbox_value_by_id("svapdxB4_1:elgGrpDisTEFRA134")
-        if val == "" or val is None:
+        if val is None:
             val = self._check_label_checkbox("TEFRA 134")
         return val
 
@@ -1194,7 +1306,7 @@ class HTMLTopExtractor:
     def eligibility_10(self) -> Optional[int]:
         """Medically needy in 209(b) States."""
         val = self._get_checkbox_value_by_id("svapdxB4_1:elgGrpMedNdy209")
-        if val == "" or val is None:
+        if val is None:
             val = self._check_label_checkbox("Medically needy in 209(b)")
         return val
 
@@ -1202,7 +1314,7 @@ class HTMLTopExtractor:
     def eligibility_11(self) -> Optional[int]:
         """Medically needy in 1634 States and SSI Criteria States."""
         val = self._get_checkbox_value_by_id("svapdxB4_1:elgGrpMedNdySSI")
-        if val == "" or val is None:
+        if val is None:
             val = self._check_label_checkbox("Medically needy in 1634 States")
         return val
 
@@ -1210,7 +1322,7 @@ class HTMLTopExtractor:
     def eligibility_12(self) -> Optional[int]:
         """Other specified groups."""
         val = self._get_checkbox_value_by_id("svapdxB4_1:elgGrpOth")
-        if val == "" or val is None:
+        if val is None:
             val = self._check_label_checkbox("Other specified groups")
         return val
 
@@ -1233,30 +1345,8 @@ class HTMLTopExtractor:
     def spousal_impov_a(self) -> Optional[int]:
         """B-5: Spousal impoverishment rules used checkbox."""
         val = self._get_checkbox_value_by_id("svapdxB5_1:elgIncSpoImpRls_2014")
-        if (val == "" or val is None) and self._is_htm:
-            try:
-                # Target specifically <p class="s2"> containing the mandatory spousal text
-                # to avoid matching the radio button paragraphs below it
-                p = self.document.find(
-                    "p", class_="s2",
-                    string=lambda x: x and "Spousal impoverishment rules" in str(x)
-                )
-                if not p:
-                    # Try find with get_text match
-                    for tag in self.document.find_all("p", class_="s2"):
-                        if "Spousal impoverishment rules" in tag.get_text() and "determine the eligibility" in tag.get_text():
-                            p = tag
-                            break
-                if p:
-                    raw = str(p)
-                    label_pos = raw.find("Spousal impoverishment rules")
-                    pre = raw[:label_pos]
-                    if "" in pre:
-                        val = 1
-                    elif "<span/>" in pre or "<span>" in pre:
-                        val = 0
-            except (AttributeError, TypeError):
-                pass
+        if val is None:
+            val = self._check_label_checkbox("Spousal impoverishment rules")
         return val
 
     # =========================================================================

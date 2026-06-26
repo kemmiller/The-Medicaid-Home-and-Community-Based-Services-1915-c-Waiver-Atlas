@@ -23,7 +23,7 @@ Total Columns Extracted (33):
   10. provision_of_personal_care_description
   11. other_state_policies
   12. other_state_policies_description
-  13. is_statewide
+  13. waive_statewideness
   14. geographic_limitations
   15. limited_implementation
   16-20. year_1 through year_5_participants
@@ -53,8 +53,23 @@ Usage:
 import os, re, csv, glob
 from typing import Optional, List, Dict
 from dataclasses import dataclass, field
+from pathlib import Path
 import pandas as pd
 from bs4 import BeautifulSoup
+
+_SKIP_FILENAME = re.compile(
+    r"approval.?letter|approvalletter|email|submission|submittal"
+    r"|amendment(?!.*R\d{2})|cover.?letter|fromokcaid",
+    re.IGNORECASE,
+)
+
+def _is_waiver_doc(path: Path) -> bool:
+    stem = re.sub(r"[.\-_ ]", "", path.stem).upper()
+    if not re.match(r"^[A-Z]{2}\d{4,5}R\d+", stem):
+        return False
+    if _SKIP_FILENAME.search(path.stem):
+        return False
+    return True
 
 # =============================================================================
 # DATA CLASSES
@@ -68,8 +83,6 @@ class ServiceDetails:
     service_delivery_method: list = None
     where_service_provided: list = None
     service_type: str = None
-    service: str = None
-    alternate_service_title: str = None
     hcbs_taxonomy_1: str = None
     hcbs_taxonomy_1a: str = None
     hcbs_taxonomy_2: str = None
@@ -96,7 +109,7 @@ class OtherStatePolicies:
 
 @dataclass
 class Statewideness:
-    is_statewide: bool = None
+    waive_statewideness: str = None
     geographic_limitations: str = None
     limited_implementation: str = None
 
@@ -118,7 +131,7 @@ COLUMN_HEADERS = [
     "provision_of_personal_care_description",
     "other_state_policies",
     "other_state_policies_description",
-    "is_statewide",
+    "waive_statewideness", # renamed from is_statewideness_waived for clarity
     "geographic_limitations",
     "limited_implementation",
     "year_1_participants",
@@ -127,8 +140,6 @@ COLUMN_HEADERS = [
     "year_4_participants",
     "year_5_participants",
     "service_type",
-    "service",
-    "alternate_service_title",
     "hcbs_taxonomy_1",
     "hcbs_taxonomy_1a",
     "hcbs_taxonomy_2",
@@ -167,6 +178,67 @@ def _get_selected_option_text(select_element) -> str:
         if "selected" in option.attrs:
             return _get_text(option)
     return ""
+
+
+_GLYPH_CHECKED = ""
+_GLYPH_STOP = re.compile(
+    r"C-1/C-3:|Appendix C:|Service Definition", re.IGNORECASE
+)
+_GLYPH_DELIVERY = [
+    ("participant", "service_self_directed"),
+    ("self-directed", "service_self_directed"),
+    ("provider managed", "service_providermanaged"),
+    ("provider", "service_providermanaged"),
+]
+_GLYPH_PROVIDER = [
+    ("legally responsible", "serviceprovider_lrp"),
+    ("relative", "serviceprovider_relative"),
+    ("legal guardian", "serviceprovider_lg"),
+]
+
+
+def _extract_glyph_checkboxes_into(dm_start, d):
+    """Populate delivery method and provider type fields from glyph-based checkboxes.
+
+    Checked indicator: paragraph contains the U+E008 glyph AND a <span class='s10'>.
+    Label text is in <span class='s2'> or <b>.
+    """
+    selected_delivery = []
+    selected_provider = []
+    cur_p = dm_start.find_next("p") if hasattr(dm_start, "find_next") else None
+    scanned = 0
+    while cur_p and scanned < 60:
+        scanned += 1
+        p_text = cur_p.get_text()
+        if _GLYPH_STOP.search(p_text):
+            break
+        is_checked_glyph = (_GLYPH_CHECKED in p_text) and bool(cur_p.find("span", class_="s10"))
+        label_el = cur_p.find("span", class_="s2") or cur_p.find("b")
+        raw_label = label_el.get_text().strip() if label_el else ""
+        # Strip any trailing "Provider Specifications..." suffix concatenated in the same span
+        full_label = re.split(r"\s*Provider Specifications", raw_label, maxsplit=1)[0].strip()
+        label = full_label.lower()
+        if label:
+            for kw, field in _GLYPH_DELIVERY:
+                if kw in label:
+                    if is_checked_glyph:
+                        setattr(d, field, 1)
+                        if full_label not in selected_delivery:
+                            selected_delivery.append(full_label)
+                    break
+            else:
+                for kw, field in _GLYPH_PROVIDER:
+                    if kw in label:
+                        if is_checked_glyph:
+                            setattr(d, field, 1)
+                            if full_label not in selected_provider:
+                                selected_provider.append(full_label)
+                        break
+        cur_p = cur_p.find_next("p")
+    if selected_delivery:
+        d.service_delivery_method = selected_delivery
+    if selected_provider:
+        d.where_service_provided = selected_provider
 
 
 # =============================================================================
@@ -348,6 +420,9 @@ class NativeHtmlExtractor:
                 d.where_service_provided = (
                     selected_provider_types if selected_provider_types else None
                 )
+        elif dm_start:
+            # Glyph-based fallback for .htm files that use  + <span class="s10"> instead of <input>
+            _extract_glyph_checkboxes_into(dm_start, d)
         return d
 
     def _extract_limits_bounded(self, svc_el):
@@ -523,10 +598,10 @@ class NativeHtmlExtractor:
             if cur and _is_checked(cur):
                 nt = _get_text(cur.next_element)
                 if nt == "No":
-                    sw.is_statewide = False
+                    sw.waive_statewideness = "No"
                 elif nt == "Yes":
-                    sw.is_statewide = True
-        if sw.is_statewide and cur:
+                    sw.waive_statewideness = "Yes"
+        if sw.waive_statewideness == "Yes" and cur:
             ta = cur.find_next("textarea")
             if ta and _get_text(ta):
                 sw.geographic_limitations = _get_text(ta)
@@ -619,8 +694,8 @@ class ConvertedHtmlExtractor:
             total[yl] = cells[1].text.strip() if len(cells) > 1 else ""
         return [total.get(y, "") for y in PARTICIPANT_YEARS]
 
-    @property
-    def service_names(self):
+    def _parse_summary_table(self):
+        """Return list of (service_name, service_type) pairs from the Waiver Services Summary table."""
         header = self.document.find(string="Appendix C: Participant Services")
         if header is None:
             return []
@@ -632,7 +707,7 @@ class ConvertedHtmlExtractor:
             t2 = tbl.findNext("table")
             if t2:
                 rows = t2.find_all("tr")
-        names, rl, i = [], list(rows), 0
+        pairs, rl, i = [], list(rows), 0
         while i < len(rl):
             row = rl[i]
             i += 1
@@ -644,10 +719,19 @@ class ConvertedHtmlExtractor:
                 if t2:
                     rl.extend(t2.find_all("tr")[1:])
                 continue
-            sn = cells[1].get_text().strip()
-            if sn and sn != "Service":
-                names.append(sn)
-        return names
+            stype = cells[0].get_text().strip()
+            sname = cells[1].get_text().strip()
+            if sname and sname != "Service":
+                pairs.append((sname, stype))
+        return pairs
+
+    @property
+    def service_names(self):
+        return [name for name, _ in self._parse_summary_table()]
+
+    @property
+    def service_types_by_name(self):
+        return {name: stype for name, stype in self._parse_summary_table()}
 
     def get_service_details(self, service_name):
         def exists_after_text(pt):
@@ -680,29 +764,40 @@ class ConvertedHtmlExtractor:
             )
             return d
 
-        # service_type
-        for el in self.document.find_all(string="Service Type:"):
-            np = el.find_next("p")
-            if np:
-                t = np.text.strip()
-                if "Statutory" in t:
-                    d.service_type = "Statutory Service"
-                    break
-                elif "Other" in t:
-                    d.service_type = "Other Service"
-                    break
+        # service_type: look up from the Waiver Services Summary table (most reliable)
+        d.service_type = self.service_types_by_name.get(service_name, "")
+        if not d.service_type:
+            # Fallback: next <p> after "Service Type:" label
+            for el in self.document.find_all(string="Service Type:"):
+                np = el.find_next("p")
+                if np:
+                    t = np.text.strip()
+                    if "Statutory" in t:
+                        d.service_type = "Statutory Service"
+                        break
+                    elif "Other" in t:
+                        d.service_type = "Other Service"
+                        break
 
         # service_definition: between "Service Definition (Scope):" and "Specify applicable..."
+        # find_next(string=...) fails when label text is split across child elements (<i> tag);
+        # instead find the parent <p> whose full text matches.
         defn_h = svc_el.find_next(string=re.compile(r"Service Definition.*Scope"))
+        if defn_h is None:
+            for p in (svc_el.find_next("p") or svc_el).find_all_next("p"):
+                if re.search(r"Service Definition.*Scope", p.get_text()):
+                    defn_h = p
+                    break
         if defn_h:
             ft = []
-            cur = defn_h.find_next("p")
+            cur = defn_h if hasattr(defn_h, "find_next") else defn_h.parent
+            cur = cur.find_next("p")
             while (
                 cur
-                and not re.search(r"Specify applicable.*limits", cur.text)
+                and not re.search(r"Specify applicable.*limits", cur.get_text())
                 and len(ft) < 10
             ):
-                t = cur.text.strip()
+                t = cur.get_text().strip()
                 if len(t) > 4:
                     ft.append(t)
                 cur = cur.find_next("p")
@@ -727,6 +822,11 @@ class ConvertedHtmlExtractor:
                     ft.append(t)
                 cur = cur.find_next("p")
             d.limits_on_the_service = "\n".join(ft)
+
+        # --- delivery method + provider type (glyph-based checkboxes) ---
+        dm_marker = svc_el.find_next(string=re.compile(r"Service Delivery Method"))
+        if dm_marker:
+            _extract_glyph_checkboxes_into(dm_marker, d)
         return d
 
     @property
@@ -866,20 +966,56 @@ class ConvertedHtmlExtractor:
 
     @property
     def state_wideness(self):
-        cur = self.document.find(
-            string="Specify the areas to which this waiver applies and, as applicable, the phase-in schedule of the waiver by geographic area:"
-        ) or self.document.find(
-            string="A waiver of statewideness is requested in order to furnish services under this waiver only to individuals who reside in the following geographic areas or political subdivisions of the State. "
+        sw = Statewideness(waive_statewideness="No")
+
+        # Geographic Limitations — description present → statewide = No
+        geo_anchor = self.document.find(
+            string=re.compile(r"Specify the areas to which this waiver applies", re.IGNORECASE)
         )
-        if cur is None:
-            return Statewideness()
-        sw = Statewideness(is_statewide=True)
-        np = cur.find_next("p")
-        if np:
-            t = np.text.strip()
-            if t and len(t) > 10:
-                sw.is_statewide = False
-                sw.geographic_limitations = t
+        if geo_anchor:
+            cur = geo_anchor if hasattr(geo_anchor, "find_next") else geo_anchor.parent
+            desc = []
+            np = cur.find_next("p")
+            for _ in range(10):
+                if np is None:
+                    break
+                t = np.get_text().strip()
+                stop_pats = ("Limited Implementation", "Appendix", "C-1", "Participant-Direction")
+                if any(s in t for s in stop_pats):
+                    break
+                # Skip short labels ending with colon and form-field glyph placeholders
+                if t and len(t) > 10 and not t.endswith(":") and not re.match(r"^[-]+$", t):
+                    desc.append(t)
+                np = np.find_next("p")
+            if desc:
+                sw.waive_statewideness = "Yes"
+                sw.geographic_limitations = "\n".join(desc)
+
+        # Limited Implementation — description present → statewide = No
+        lim_anchor = self.document.find(
+            string=re.compile(r"Specify the areas of the State affected by this waiver", re.IGNORECASE)
+        )
+        if lim_anchor is None:
+            lim_anchor = self.document.find(
+                string=re.compile(r"Limited Implementation of Participant.Direction", re.IGNORECASE)
+            )
+        if lim_anchor:
+            cur = lim_anchor if hasattr(lim_anchor, "find_next") else lim_anchor.parent
+            desc = []
+            np = cur.find_next("p")
+            for _ in range(10):
+                if np is None:
+                    break
+                t = np.get_text().strip()
+                if any(s in t for s in ("Appendix", "C-1", "Geographic Limitation")):
+                    break
+                if t and len(t) > 10 and not t.endswith(":") and not re.match(r"^[-]+$", t):
+                    desc.append(t)
+                np = np.find_next("p")
+            if desc:
+                sw.waive_statewideness = "Yes"
+                sw.limited_implementation = "\n".join(desc)
+
         return sw
 
 
@@ -917,14 +1053,15 @@ class HtmServiceLevelExtractor:
 
     def extract_folder(self, folder_path, recursive=True, verbose=True):
         if recursive:
-            fps = glob.glob(os.path.join(folder_path, "**", "*.htm"), recursive=True)
-            fps += glob.glob(os.path.join(folder_path, "**", "*.html"), recursive=True)
+            all_fps = glob.glob(os.path.join(folder_path, "**", "*.htm"), recursive=True)
+            all_fps += glob.glob(os.path.join(folder_path, "**", "*.html"), recursive=True)
         else:
-            fps = glob.glob(os.path.join(folder_path, "*.htm"))
-            fps += glob.glob(os.path.join(folder_path, "*.html"))
-        fps = sorted(set(fps))
+            all_fps = glob.glob(os.path.join(folder_path, "*.htm"))
+            all_fps += glob.glob(os.path.join(folder_path, "*.html"))
+        all_fps = sorted(set(all_fps))
+        fps = [f for f in all_fps if _is_waiver_doc(Path(f))]
         if verbose:
-            print(f"Found {len(fps)} HTML/HTM files in {folder_path}")
+            print(f"Found {len(all_fps)} HTML/HTM files, processing {len(fps)} waiver docs (skipped {len(all_fps)-len(fps)})")
         all_rows, failed = [], []
         for fp in fps:
             try:
@@ -1020,15 +1157,13 @@ class HtmServiceLevelExtractor:
                     ppc.description,
                     osp.selection,
                     osp.description,
-                    sw.is_statewide,
+                    sw.waive_statewideness,
                     sw.geographic_limitations,
                     sw.limited_implementation,
                 ]
                 + parts
                 + [
                     d.service_type,
-                    d.service,
-                    d.alternate_service_title,
                     d.hcbs_taxonomy_1,
                     d.hcbs_taxonomy_1a,
                     d.hcbs_taxonomy_2,

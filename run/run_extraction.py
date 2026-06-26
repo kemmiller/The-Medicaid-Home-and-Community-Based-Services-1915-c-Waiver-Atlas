@@ -213,9 +213,8 @@ def test_single_file(file_path: str, tier: str = "all"):
 
     if tier in ("top", "all"):
         print(f"\n[TOP] {len(top)} fields")
-        for k, v in list(top.items())[:10]:
+        for k, v in top.items():
             print(f"  {k}: {v}")
-        print("  ...")
 
     if tier in ("secondary", "all"):
         print(f"\n[SECONDARY] {len(sec)} fields")

@@ -26,7 +26,7 @@ Total Columns (33) — identical to htm_service_level_extractor.py:
   10. provision_of_personal_care_description
   11. other_state_policies
   12. other_state_policies_description
-  13. is_statewide
+  13. waive_statewideness
   14. geographic_limitations
   15. limited_implementation
   16-20. year_1 through year_5_participants
@@ -60,6 +60,20 @@ from pathlib import Path
 from collections import defaultdict
 import pandas as pd
 
+_SKIP_FILENAME = re.compile(
+    r"approval.?letter|approvalletter|email|submission|submittal"
+    r"|amendment(?!.*R\d{2})|cover.?letter|fromokcaid",
+    re.IGNORECASE,
+)
+
+def _is_waiver_doc(path: Path) -> bool:
+    stem = re.sub(r"[.\-_ ]", "", path.stem).upper()
+    if not re.match(r"^[A-Z]{2}\d{4,5}R\d+", stem):
+        return False
+    if _SKIP_FILENAME.search(path.stem):
+        return False
+    return True
+
 
 # =============================================================================
 # COLUMN HEADERS — matches HTML extractor exactly
@@ -78,7 +92,7 @@ COLUMN_HEADERS = [
     "provision_of_personal_care_description",
     "other_state_policies",
     "other_state_policies_description",
-    "is_statewide",
+    "waive_statewideness",
     "geographic_limitations",
     "limited_implementation",
     "year_1_participants",
@@ -87,8 +101,6 @@ COLUMN_HEADERS = [
     "year_4_participants",
     "year_5_participants",
     "service_type",
-    "service",
-    "alternate_service_title",
     "hcbs_taxonomy_1",
     "hcbs_taxonomy_1a",
     "hcbs_taxonomy_2",
@@ -123,7 +135,7 @@ class OtherStatePolicies:
 
 @dataclass
 class Statewideness:
-    is_statewide: bool = None
+    waive_statewideness: str = None
     geographic_limitations: str = None
     limited_implementation: str = None
 
@@ -141,8 +153,20 @@ def clean_text(text: str) -> str:
     )
     text = re.sub(r"\(\d{2}/\d{2}/\d{4}\)", "", text)
     text = re.sub(r"Appendix C: Participant Services", "", text)
+    # Strip bare URLs (PDF-converted files embed print URLs)
+    text = re.sub(r"https?://\S+", "", text)
     text = re.sub(r"\s+", " ", text)
     return text.strip()
+
+
+def _is_junk_line(line: str) -> bool:
+    """True for PDF header/URL lines that should be skipped in text extraction."""
+    s = line.strip()
+    if re.match(r"https?://", s):
+        return True
+    if re.match(r"Application for 1915\(c\) HCBS Waiver:.*Page \d+ of \d+", s):
+        return True
+    return False
 
 
 # =============================================================================
@@ -209,25 +233,32 @@ class DocumentLevelExtractor:
             if idx is None:
                 idx = self._find_index("B-3: Number of Individuals Served")
             if idx is None:
+                idx = self._find_index("B 3: Number of Individuals Served")
+            if idx is None:
                 return [""] * 5
             values = {}
             i = idx
             while i < min(idx + 50, len(self._no_nl)):
                 line = self._no_nl[i]
-                ym = re.match(r"^Year\s*(\d+)", line)
+                ym = re.match(r"^Year\s*(\d+)\s*([\d,]+)?", line)
                 if ym:
                     yn = ym.group(1)
-                    for j in range(i + 1, min(i + 5, len(self._no_nl))):
-                        nl = self._no_nl[j].strip()
-                        if (
-                            nl.startswith("Year")
-                            or nl.startswith("b.")
-                            or "Table: B-3-b" in nl
-                        ):
-                            break
-                        if re.match(r"^[\d,]+$", nl.replace(",", "")):
-                            values[f"Year {yn}"] = nl.replace(",", "")
-                            break
+                    # Flat format: number on the same line ("Year 1  3091")
+                    if ym.group(2):
+                        values[f"Year {yn}"] = ym.group(2).replace(",", "")
+                    else:
+                        # Standard format: number on the next non-empty line
+                        for j in range(i + 1, min(i + 5, len(self._no_nl))):
+                            nl = self._no_nl[j].strip()
+                            if (
+                                nl.startswith("Year")
+                                or nl.startswith("b.")
+                                or "Table: B-3-b" in nl
+                            ):
+                                break
+                            if re.match(r"^[\d,]+$", nl.replace(",", "")):
+                                values[f"Year {yn}"] = nl.replace(",", "")
+                                break
                 if (
                     "Table: B-3-b" in line
                     or line.startswith("b.")
@@ -241,20 +272,23 @@ class DocumentLevelExtractor:
 
     # --- Service Names from C-1 Summary ---
 
-    @property
-    def service_names(self) -> List[str]:
-        services = []
+    def _parse_service_summary_table(self) -> List[tuple]:
+        """Returns list of (service_name, service_type) from C-1 summary table."""
+        pairs = []
         idx = self._find_index("C-1: Summary of Services Covered")
         if idx is None:
             idx = self._find_index("Waiver Services Summary")
         if idx is None:
-            return self._extract_services_from_specs()
+            return pairs
+
+        _svc_types = {"Statutory Service", "Other Service", "Extended State Plan Service"}
+        _svc_type_pat = re.compile(r"^(Statutory Service|Other Service|Extended State Plan Service)\s{2,}(.+?)\s*$")
 
         in_table = False
         i = idx
         while i < min(idx + 200, len(self._no_nl)):
             line = self._no_nl[i]
-            if "Service Type" in line:
+            if "Service Type" in line and "Service Delivery" not in line:
                 in_table = True
                 i += 1
                 continue
@@ -265,33 +299,43 @@ class DocumentLevelExtractor:
                     and i + 1 < len(self._no_nl)
                     and "Service Specification" in self._no_nl[i + 1]
                 )
+                or ("Appendix C:" in line and "C-1/C-3:" in line)
             ):
                 break
-            if in_table and line in [
-                "Statutory Service",
-                "Other Service",
-                "Extended State Plan Service",
-            ]:
-                for j in range(i + 1, min(i + 5, len(self._no_nl))):
-                    nl = self._no_nl[j].strip()
-                    if nl and nl not in [
-                        "Statutory Service",
-                        "Other Service",
-                        "Extended State Plan Service",
-                    ]:
-                        if (
-                            nl not in services
-                            and len(nl) > 1
-                            and not any(
+            if in_table:
+                # Flat format: "Statutory Service  Adult Day Services  " on one line
+                m = _svc_type_pat.match(line)
+                if m:
+                    svc_type = m.group(1).strip()
+                    svc = m.group(2).strip()
+                    if svc and len(svc) > 1:
+                        pairs.append((svc, svc_type))
+                    i += 1
+                    continue
+                # Standard format: service type alone on a line, name on next line
+                if line in _svc_types:
+                    for j in range(i + 1, min(i + 5, len(self._no_nl))):
+                        nl = self._no_nl[j].strip()
+                        if nl and nl not in _svc_types:
+                            if len(nl) > 1 and not any(
                                 s in nl for s in ["Service Type", "Appendix", "C-1"]
-                            )
-                        ):
-                            services.append(nl)
-                        break
+                            ):
+                                pairs.append((nl, line))
+                            break
             i += 1
-        if not services:
-            services = self._extract_services_from_specs()
-        return services
+        return pairs
+
+    @property
+    def service_names(self) -> List[str]:
+        pairs = self._parse_service_summary_table()
+        if pairs:
+            return [p[0] for p in pairs]
+        return self._extract_services_from_specs()
+
+    @property
+    def service_types_by_name(self) -> Dict[str, str]:
+        """Maps service name → service type from the C-1 summary table."""
+        return {name: stype for name, stype in self._parse_service_summary_table()}
 
     def _extract_services_from_specs(self) -> List[str]:
         services = []
@@ -341,18 +385,24 @@ class DocumentLevelExtractor:
         end = self._find_service_section_end(start, service_name)
         section = self._no_nl[start:end]
 
-        # renewal status
-        options = [
+        # renewal status — radio button with no checked indicator in text files;
+        # presence of any of the three standard options means the block exists,
+        # so always return the first option as the default.
+        _renewal_options = [
             "Service is included in approved waiver. There is no change in service specifications.",
             "Service is included in approved waiver. The service specifications have been modified.",
             "Service is not included in the approved waiver.",
             "This is a new service added to the approved waiver.",
         ]
-        for i, line in enumerate(section):
-            for opt in options:
+        for line in section:
+            for opt in _renewal_options:
                 if opt in line:
-                    if i > 0 and section[i - 1].strip() != "Off":
-                        result["renewal_or_new_or_replacement"] = opt
+                    result["renewal_or_new_or_replacement"] = (
+                        "Service is included in approved waiver. There is no change in service specifications."
+                    )
+                    break
+            if result["renewal_or_new_or_replacement"]:
+                break
 
         # limits — bounded: "Specify applicable..." → "Service Delivery Method"
         limits = []
@@ -482,39 +532,43 @@ class DocumentLevelExtractor:
             "Provision of Personal Care or Similar Services by Legally Responsible Individuals"
         )
         if idx is None:
-            idx = self._find_index("C-2: General Service Specifications")
-        if idx is None:
             return result
-        for i in range(idx, min(idx + 50, len(self._no_nl))):
+
+        _skip = {"Off", "Yes", "on"}
+        _stop = {
+            "e.", "Other State Policies", "Self-directed", "Agency-operated", "f.",
+            "Open Enrollment",
+        }
+
+        # Find the "Specify: (a)..." header — it always appears whether or not description is filled.
+        # Collect any text after it. If text exists → "Yes"; if empty → "No".
+        for i in range(idx, min(idx + 60, len(self._no_nl))):
             line = self._no_nl[i]
-            if (
-                "No. The state does not make payment to legally responsible individuals"
-                in line.lower()
-                or "No. The State does not make payment to legally responsible individuals"
-                in line
-            ):
-                result.selection = "No. The State does not make payment to legally responsible individuals for furnishing personal care or similar services."
-                break
-            elif (
-                "Yes. The state makes payment to legally responsible individuals"
-                in line.lower()
-                or "Yes. The State makes payment to legally responsible individuals"
-                in line
-            ):
-                result.selection = "Yes. The State makes payment to legally responsible individuals for furnishing personal care or similar services when they are qualified to provide the services."
-                for j in range(i + 1, min(i + 30, len(self._no_nl))):
-                    dl = self._no_nl[j]
-                    if dl.startswith("Specify:") or "specify" in dl.lower():
-                        desc = []
-                        for k in range(j + 1, min(j + 20, len(self._no_nl))):
-                            nl = self._no_nl[k]
-                            if nl.startswith("e.") or "Other State Policies" in nl:
-                                break
-                            if nl.strip() and not nl.startswith("svapdx"):
-                                desc.append(nl)
-                        result.description = " ".join(desc)
+            if line.startswith("Specify:") and "legally responsible individuals who may be paid" in line:
+                desc = []
+                for k in range(i + 1, min(i + 30, len(self._no_nl))):
+                    nl = self._no_nl[k]
+                    if any(nl.startswith(s) or nl == s or s in nl for s in _stop):
                         break
+                    if nl.strip() and not nl.startswith("svapdx") and nl.strip() not in _skip and not _is_junk_line(nl):
+                        desc.append(nl.strip())
+                if desc:
+                    result.description = clean_text(" ".join(desc))
+                    result.selection = "Yes. The State makes payment to legally responsible individuals for furnishing personal care or similar services when they are qualified to provide the services."
+                else:
+                    result.selection = "No. The State does not make payment to legally responsible individuals for furnishing personal care or similar services."
                 break
+        else:
+            # Block found but no Specify header — default to No
+            for i in range(idx, min(idx + 30, len(self._no_nl))):
+                line = self._no_nl[i]
+                if (
+                    "no. the state does not make payment to legally responsible individuals" in line.lower()
+                    or "yes. the state makes payment to legally responsible individuals" in line.lower()
+                ):
+                    result.selection = "No. The State does not make payment to legally responsible individuals for furnishing personal care or similar services."
+                    break
+
         return result
 
     # --- C-2 Section: Other State Policies ---
@@ -527,39 +581,47 @@ class DocumentLevelExtractor:
         )
         if idx is None:
             return result
+
+        _skip = {"Off", "Yes", "on"}
+        _stop_desc = {
+            "Relatives/legal guardians may be paid for providing waiver services",
+            "Specify the controls that are employed to ensure",
+            "f.", "Open Enrollment",
+        }
+
+        # Find "Specify the specific circumstances..." header — only present if option 2 was selected.
+        # Collect text after it. If text exists → option 2 + description.
+        # If no text there → option 1 ("does not make payment").
+        desc_found = False
         for i in range(idx, min(idx + 80, len(self._no_nl))):
             line = self._no_nl[i]
-            if "The state does not make payment to relatives/legal guardians" in line:
-                result.selection = "The state does not make payment to relatives/legal guardians for furnishing waiver services."
-                break
-            elif (
-                "The state makes payment to relatives/legal guardians under specific circumstances"
-                in line
-            ):
-                result.selection = "The state makes payment to relatives/legal guardians under specific circumstances and only when the relative/guardian is qualified to furnish services."
+            if "Specify the specific circumstances under which payment is made" in line:
                 desc = []
-                for j in range(i + 1, min(i + 50, len(self._no_nl))):
-                    dl = self._no_nl[j]
-                    if (
-                        "Relatives/legal guardians may be paid" in dl
-                        or dl.startswith("f.")
-                        or "Open Enrollment" in dl
-                    ):
+                for k in range(i + 1, min(i + 80, len(self._no_nl))):
+                    nl = self._no_nl[k]
+                    if any(s in nl for s in _stop_desc) or nl.startswith("f."):
                         break
-                    if (
-                        dl.strip()
-                        and not dl.startswith("svapdx")
-                        and dl not in ["Off", "Yes"]
-                    ):
-                        desc.append(dl)
-                result.description = " ".join(desc)
+                    if nl.strip() and not nl.startswith("svapdx") and nl.strip() not in _skip and not _is_junk_line(nl):
+                        desc.append(nl.strip())
+                if desc:
+                    result.description = clean_text(" ".join(desc))
+                    result.selection = "The state makes payment to relatives/legal guardians under specific circumstances and only when the relative/guardian is qualified to furnish services."
+                    desc_found = True
                 break
-            elif (
-                "Relatives/legal guardians may be paid for providing waiver services"
-                in line
-            ):
-                result.selection = "Relatives/legal guardians may be paid for providing waiver services whenever the relative/legal guardian is qualified to provide services as specified in Appendix C-1/C-3."
-                break
+
+        if not desc_found:
+            # No description found — default to option 1 if block exists at all
+            for i in range(idx, min(idx + 30, len(self._no_nl))):
+                line = self._no_nl[i]
+                if (
+                    "the state does not make payment to relatives/legal guardians" in line.lower()
+                    or "the state makes payment to relatives/legal guardians" in line.lower()
+                    or "relatives/legal guardians may be paid" in line.lower()
+                    or "other policy" in line.lower()
+                ):
+                    result.selection = "The state does not make payment to relatives/legal guardians for furnishing waiver services."
+                    break
+
         return result
 
     # --- Statewideness ---
@@ -567,35 +629,68 @@ class DocumentLevelExtractor:
     @property
     def state_wideness(self) -> Statewideness:
         result = Statewideness()
-        idx = self._find_index("4. Waiver(s) Requested")
+        idx = self._find_index("Statewideness")
         if idx is None:
-            idx = self._find_index("Statewideness")
+            idx = self._find_index("4. Waiver(s) Requested")
         if idx is None:
             return result
-        for i in range(idx, min(idx + 100, len(self._no_nl))):
+
+        _skip = {"Off", "Yes", "on", "No"}
+
+        # Radio button: detect which option was selected.
+        # Standard format: "svwaiverReq:statewide" prefix + "No"/"Yes" on same or next line.
+        # Flat format: standalone "No"/"Yes" within a few lines of the Statewideness header.
+        # waive_statewideness = "No" → No (does not waive, services are statewide)
+        # waive_statewideness = "Yes" → Yes (waives statewideness, geographic restriction)
+        for i in range(idx, min(idx + 30, len(self._no_nl))):
             line = self._no_nl[i]
-            if "No" in line and i > 0:
-                ctx = "\n".join(self._no_nl[max(0, i - 5) : i + 1])
-                if "Statewideness" in ctx:
-                    result.is_statewide = True
-            if "Geographic Limitation" in line:
+            if "svwaiverReq:statewide" in line:
+                val = line.split("svwaiverReq:statewide")[-1].strip()
+                if not val and i + 1 < len(self._no_nl):
+                    val = self._no_nl[i + 1].strip()
+                result.waive_statewideness = "Yes" if val == "Yes" else "No"
+                break
+            if line.strip() in ("No", "Yes") and "svwaiverReq:statewide" in self._no_nl[max(0, i - 1)]:
+                result.waive_statewideness = "Yes" if line.strip() == "Yes" else "No"
+                break
+            # Flat format: standalone No/Yes within a few lines of Statewideness header
+            if "Statewideness" in self._no_nl[idx] and line.strip() in ("No", "Yes") and i < idx + 10:
+                result.waive_statewideness = "Yes" if line.strip() == "Yes" else "No"
+                break
+
+        # geographic_limitations: text after "Specify the areas to which this waiver applies..."
+        # before "Limited Implementation" header
+        for i in range(idx, min(idx + 80, len(self._no_nl))):
+            line = self._no_nl[i]
+            if "Specify the areas to which this waiver applies" in line:
                 desc = []
-                for j in range(i + 1, min(i + 15, len(self._no_nl))):
-                    dl = self._no_nl[j]
-                    if dl.startswith("c.") or "Limited Implementation" in dl:
+                for k in range(i + 1, min(i + 20, len(self._no_nl))):
+                    dl = self._no_nl[k]
+                    if "Limited Implementation" in dl or dl.startswith("5.") or "Assurances" in dl:
                         break
-                    if dl.strip() and not dl.startswith("svapdx"):
-                        desc.append(dl)
-                result.geographic_limitations = " ".join(desc)
-            if "Limited Implementation" in line:
+                    if dl.strip() and not dl.startswith("svapdx") and dl.strip() not in _skip and not _is_junk_line(dl):
+                        desc.append(dl.strip())
+                if desc:
+                    result.geographic_limitations = " ".join(desc)
+                break
+
+        # limited_implementation: text after "Specify the areas of the state affected by this waiver..."
+        # before "5. Assurances"
+        for i in range(idx, min(idx + 120, len(self._no_nl))):
+            line = self._no_nl[i]
+            if "Specify the areas of the state affected by this waiver" in line or \
+               "Specify the areas of the State affected by this waiver" in line:
                 desc = []
-                for j in range(i + 1, min(i + 15, len(self._no_nl))):
-                    dl = self._no_nl[j]
+                for k in range(i + 1, min(i + 20, len(self._no_nl))):
+                    dl = self._no_nl[k]
                     if dl.startswith("5.") or "Assurances" in dl:
                         break
-                    if dl.strip() and not dl.startswith("svapdx"):
-                        desc.append(dl)
-                result.limited_implementation = " ".join(desc)
+                    if dl.strip() and not dl.startswith("svapdx") and dl.strip() not in _skip and not _is_junk_line(dl):
+                        desc.append(dl.strip())
+                if desc:
+                    result.limited_implementation = " ".join(desc)
+                break
+
         return result
 
     def _find_index(self, *terms):
@@ -627,7 +722,7 @@ class ServiceSectionExtractor:
         in_s = False
         start = None
         for i, line in enumerate(self._document):
-            if "C-1/C-3: Service Specification" in line:
+            if "C-1/C-3: Service Specification" in line and "Provider" not in line:
                 if in_s and start is not None:
                     sections.append((start, i - 1))
                 start = i
@@ -647,12 +742,12 @@ class ServiceSectionExtractor:
 
     def extract_section(self, start: int, end: int) -> Dict[str, Any]:
         lines = self._document[start : end + 1]
+        # Include a small lookahead window past the section boundary for Pass 3
+        # (Service Name: appears in Provider Specifications block just after the section ends)
+        lookahead = self._document[end + 1 : end + 15]
         d = {}
+        d["_svc_name"] = self._extract_service_name(lines, lookahead)
         d["service_type"] = self._extract_service_type(lines)
-        d["service"] = self._extract_service_name(lines)
-        d["alternate_service_title"] = self._extract_field(
-            lines, "Alternate Service Title (if any):", "HCBS Taxonomy:"
-        )
         d["hcbs_taxonomy_1"] = self._extract_taxonomy(
             lines, "Category 1:", "Sub-Category 1:"
         )
@@ -696,7 +791,7 @@ class ServiceSectionExtractor:
                     return "Other Service"
                 for j in range(i + 1, min(i + 5, len(lines))):
                     nl = lines[j].strip()
-                    if not nl or nl.startswith("svapdx"):
+                    if not nl or nl.startswith("svapdx") or _is_junk_line(nl):
                         continue
                     if "Service:" in nl or "Service Title:" in nl:
                         break
@@ -707,15 +802,53 @@ class ServiceSectionExtractor:
                 break
         return ""
 
-    def _extract_service_name(self, lines):
-        r = self._extract_taxonomy(lines, "Service:", "Alternate Service Title")
-        if r:
-            return r
-        r = self._extract_taxonomy(lines, "Service Title:", "HCBS Taxonomy:")
-        if r:
-            return r
-        r = self._extract_taxonomy(lines, "Service:", "HCBS Taxonomy:")
-        return r
+    def _extract_service_name(self, lines, lookahead=None):
+        _skip = {"Service Type:", "Service Delivery Method (check each that applies):"}
+        _end = {
+            "Alternate Service Title (if any):", "Alternate Service Title:",
+            "HCBS Taxonomy:", "Service Definition (Scope):",
+        }
+
+        # Pass 1: look for "Service:" or "Service Title:" (explicit name field)
+        for i, raw_line in enumerate(lines):
+            stripped = raw_line.strip()
+            if stripped in _skip:
+                continue
+            if stripped in ("Service:", "Service Title:") or stripped.startswith("Service Title:"):
+                after = stripped.split(":", 1)[-1].strip() if ":" in stripped else ""
+                if after and after not in _skip and not after.startswith("svapdx"):
+                    return clean_text(after)
+                for j in range(i + 1, min(i + 8, len(lines))):
+                    nl = lines[j].strip()
+                    if not nl or nl.startswith("svapdx") or nl in ("Off", "Yes", "on") or _is_junk_line(nl):
+                        continue
+                    if nl in _end or any(nl.startswith(e) for e in _end):
+                        break
+                    return clean_text(nl)
+
+        # Pass 2 (flat-format fallback): "Service:" field was blank;
+        # name appears under "Alternate Service Title (if any):" as the first non-empty value
+        for i, raw_line in enumerate(lines):
+            stripped = raw_line.strip()
+            if stripped in ("Alternate Service Title (if any):", "Alternate Service Title:"):
+                for j in range(i + 1, min(i + 8, len(lines))):
+                    nl = lines[j].strip()
+                    if not nl or nl.startswith("svapdx") or nl in ("Off", "Yes", "on") or _is_junk_line(nl):
+                        continue
+                    if "HCBS Taxonomy" in nl or "Category" in nl or "Service Definition" in nl:
+                        break
+                    return clean_text(nl)
+
+        # Pass 3: "Service Name: X" in Provider Specifications block just after section boundary
+        # Handles both "Service Name: Respite" and "Service Type: ... Service Name: Respite"
+        for raw_line in list(lines) + list(lookahead or []):
+            stripped = raw_line.strip()
+            if "Service Name:" in stripped:
+                name = stripped.split("Service Name:", 1)[-1].strip()
+                if name and not _is_junk_line(name):
+                    return clean_text(name)
+
+        return ""
 
     def _extract_taxonomy(self, lines, start_marker, end_marker):
         collecting = False
@@ -754,9 +887,25 @@ class ServiceSectionExtractor:
                 if end_marker in line:
                     break
                 s = line.strip()
-                if s and not s.startswith("svapdx") and s not in ["Off", "Yes", "on"]:
+                if s and not s.startswith("svapdx") and s not in ["Off", "Yes", "on"] and not _is_junk_line(s):
                     parts.append(s)
         return clean_text(" ".join(parts))
+
+    @staticmethod
+    def _is_checked(line: str, prev: str) -> bool:
+        """Detect checked state across three formats:
+        - Standard format: preceding line is "Yes" (not "Off")
+        - Flat/PDF prefix format: line starts with ". " (dot-space prefix)
+        - PDF-converted suffix format: line ends with " ." (space-dot suffix)
+        """
+        s = line.strip()
+        if s.startswith(". "):
+            return True
+        if s.endswith(" .") or s.endswith(" ."):
+            return True
+        if prev == "Yes":
+            return True
+        return False
 
     def _extract_delivery_method(self, lines):
         result = {"self_directed": 0, "provider_managed": 0}
@@ -765,39 +914,66 @@ class ServiceSectionExtractor:
         for line in lines:
             if "Service Delivery Method (check each that applies):" in line:
                 in_s = True
+                rest = line.split("Service Delivery Method (check each that applies):")[-1]
+                if "Participant-directed" in rest:
+                    result["self_directed"] = 1
+                if "Provider managed" in rest:
+                    result["provider_managed"] = 1
                 continue
             if in_s:
                 if "Specify whether the service may be provided" in line:
                     break
                 s = line.strip()
                 if "Participant-directed" in s:
-                    result["self_directed"] = 1 if prev == "Yes" else 0
+                    result["self_directed"] = 1 if self._is_checked(s, prev) else 0
                 elif "Provider managed" in s:
-                    result["provider_managed"] = 1 if prev == "Yes" else 0
+                    result["provider_managed"] = 1 if self._is_checked(s, prev) else 0
                 prev = s
         return result
 
     def _extract_provider_types(self, lines):
         result = {"lrp": 0, "relative": 0, "lg": 0}
         in_s = False
+        # Track which labels appeared inline (bundled on the header line)
+        inline_labels = set()
         prev = ""
         for line in lines:
-            if (
-                "Specify whether the service may be provided by (check each that applies):"
-                in line
-            ):
+            if "Specify whether the service may be provided by (check each that applies):" in line:
                 in_s = True
+                rest = line.split("check each that applies):")[-1]
+                # Inline bundled names: if label present on same line, record it
+                # but only mark checked if there's also a dot indicator on same line
+                has_dot_inline = rest.strip().endswith(".") or ". " in rest
+                if "Legally Responsible Person" in rest:
+                    inline_labels.add("lrp")
+                    if has_dot_inline:
+                        result["lrp"] = 1
+                if "Relative" in rest:
+                    inline_labels.add("relative")
+                    if has_dot_inline:
+                        result["relative"] = 1
+                if "Legal Guardian" in rest and "Provider Specifications" not in rest:
+                    inline_labels.add("lg")
+                    if has_dot_inline:
+                        result["lg"] = 1
                 continue
             if in_s:
                 if "Provider Specifications:" in line or "Provider Category" in line:
                     break
                 s = line.strip()
+                # Standalone "." on its own line = checked indicator for the preceding inline labels
+                if s == "." and inline_labels:
+                    for label in inline_labels:
+                        result[label] = 1
+                    inline_labels.clear()
+                    prev = s
+                    continue
                 if "Legally Responsible Person" in s:
-                    result["lrp"] = 1 if prev == "Yes" else 0
-                elif s.startswith("Relative") or s == "Relative":
-                    result["relative"] = 1 if prev == "Yes" else 0
-                elif "Legal Guardian" in s:
-                    result["lg"] = 1 if prev == "Yes" else 0
+                    result["lrp"] = 1 if self._is_checked(s, prev) else 0
+                elif re.match(r"^\.?\s*Relative\b", s):
+                    result["relative"] = 1 if self._is_checked(s, prev) else 0
+                elif "Legal Guardian" in s and "Provider Specifications" not in s:
+                    result["lg"] = 1 if self._is_checked(s, prev) else 0
                 prev = s
         return result
 
@@ -807,7 +983,7 @@ class ServiceSectionExtractor:
         for s, e in sections:
             try:
                 d = self.extract_section(s, e)
-                if d.get("service") or d.get("service_type"):
+                if d.get("_svc_name") or d.get("service_type"):
                     results.append(d)
             except Exception as ex:
                 print(f"  [WARN] Error extracting C-1/C-3 section lines {s}-{e}: {ex}")
@@ -847,15 +1023,16 @@ class TxtServiceLevelExtractor:
         )
 
     def extract_folder(self, folder_path, recursive=True, verbose=True):
-        fps = sorted(
+        all_fps = sorted(
             set(
                 glob.glob(os.path.join(folder_path, "**", "*.txt"), recursive=True)
                 if recursive
                 else glob.glob(os.path.join(folder_path, "*.txt"))
             )
         )
+        fps = [f for f in all_fps if _is_waiver_doc(Path(f))]
         if verbose:
-            print(f"Found {len(fps)} text files in {folder_path}")
+            print(f"Found {len(all_fps)} text files, processing {len(fps)} waiver docs (skipped {len(all_fps)-len(fps)})")
         all_rows, failed = [], []
         for fp in fps:
             try:
@@ -918,8 +1095,9 @@ class TxtServiceLevelExtractor:
         osp = doc_ext.other_state_policies
         sw = doc_ext.state_wideness
 
-        # --- Service names from C-1 Summary table ---
+        # --- Service names and types from C-1 Summary table ---
         svc_names = doc_ext.service_names
+        svc_type_map = doc_ext.service_types_by_name
 
         # --- C-1/C-3 section extractor (additional columns) ---
         sec_ext = ServiceSectionExtractor(document)
@@ -928,14 +1106,14 @@ class TxtServiceLevelExtractor:
         # Build a lookup: service name → C-1/C-3 additional data
         c1c3_lookup = {}
         for d in c1c3_data_list:
-            svc = d.get("service", "")
+            svc = d.get("_svc_name", "")
             if svc:
                 c1c3_lookup[svc] = d
 
         # If no service names from C-1 summary, use C-1/C-3 section names
         if not svc_names:
             svc_names = [
-                d.get("service", "") for d in c1c3_data_list if d.get("service")
+                d.get("_svc_name", "") for d in c1c3_data_list if d.get("_svc_name")
             ]
 
         if not svc_names:
@@ -958,9 +1136,12 @@ class TxtServiceLevelExtractor:
             orig = doc_ext.get_service_details_original(svc_name)
 
             # Find matching C-1/C-3 section
-            c1c3 = c1c3_lookup.get(svc_name)
+            c1c3 = None
+            if svc_name in c1c3_lookup and svc_name not in used_c1c3:
+                c1c3 = c1c3_lookup[svc_name]
+                used_c1c3.add(svc_name)
             if c1c3 is None:
-                # Try case-insensitive / substring match
+                # Try case-insensitive / substring match against _svc_name
                 for key, val in c1c3_lookup.items():
                     if key not in used_c1c3 and (
                         key.lower() == svc_name.lower()
@@ -970,9 +1151,14 @@ class TxtServiceLevelExtractor:
                         c1c3 = val
                         used_c1c3.add(key)
                         break
-            if c1c3 is None and idx < len(c1c3_data_list):
-                # Positional fallback: match by index
-                c1c3 = c1c3_data_list[idx]
+            if c1c3 is None:
+                # Positional fallback: only use unnamed sections (no _svc_name extracted)
+                for sec in c1c3_data_list:
+                    sec_id = id(sec)
+                    if sec_id not in used_c1c3 and not sec.get("_svc_name"):
+                        c1c3 = sec
+                        used_c1c3.add(sec_id)
+                        break
 
             if c1c3 is None:
                 c1c3 = {}
@@ -992,16 +1178,14 @@ class TxtServiceLevelExtractor:
                     ppc.description,
                     osp.selection,
                     osp.description,
-                    sw.is_statewide,
+                    sw.waive_statewideness,
                     sw.geographic_limitations,
                     sw.limited_implementation,
                 ]
                 + parts
                 + [
                     # --- Additional 13 ---
-                    c1c3.get("service_type", ""),
-                    c1c3.get("service", ""),
-                    c1c3.get("alternate_service_title", ""),
+                    c1c3.get("service_type", "") or svc_type_map.get(svc_name, ""),
                     c1c3.get("hcbs_taxonomy_1", ""),
                     c1c3.get("hcbs_taxonomy_1a", ""),
                     c1c3.get("hcbs_taxonomy_2", ""),
